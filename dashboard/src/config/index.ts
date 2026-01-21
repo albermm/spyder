@@ -2,9 +2,8 @@
  * RemoteEye Dashboard - Configuration
  */
 
-// TODO: Replace with your deployed server URL (e.g., Render, Railway, VPS)
-// For local development, you can use 'http://localhost:8765'
-const SERVER_URL = 'http://localhost:8765';
+// Server configuration - deployed on Render
+const SERVER_URL = 'https://spyder-server.onrender.com';
 
 export const CONFIG = {
   // Server URL - single source of truth

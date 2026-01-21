@@ -2,10 +2,8 @@
  * RemoteEye Mobile - Configuration
  */
 
-// Server configuration
-// TODO: Replace with your deployed server URL (e.g., Render, Railway, VPS)
-// This should be a publicly accessible URL so the iPhone can connect from anywhere
-const SERVER_URL = 'https://remoteeye-server.onrender.com';
+// Server configuration - deployed on Render
+const SERVER_URL = 'https://spyder-server.onrender.com';
 
 export const CONFIG = {
   // Server URL - single source of truth
