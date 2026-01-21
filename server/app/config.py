@@ -14,6 +14,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        populate_by_name=True,
     )
 
     # Server
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     # Security
     secret_key: str = Field(
         default="change-me-in-production",
+        alias="JWT_SECRET",
         description="Secret key for JWT signing",
     )
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
@@ -35,7 +37,8 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(
-        default="sqlite+aiosqlite:///./data/remoteeye.db",
+        default="sqlite+aiosqlite:////tmp/remoteeye.db",
+        alias="DATABASE_URL",
         description="Database connection URL",
     )
 
