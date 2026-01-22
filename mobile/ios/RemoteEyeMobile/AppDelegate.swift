@@ -17,7 +17,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    // Configure Firebase
+    // --- Standard Firebase Initialization (Keep this) ---
     FirebaseApp.configure()
 
     // Set up push notifications
@@ -32,6 +32,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     )
     application.registerForRemoteNotifications()
 
+    // --- React Native Bridge Initialization (Modified) ---
+    // We initialize the bridge to run the JS code, but we don't attach it to a view.
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
@@ -39,13 +41,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
-    window = UIWindow(frame: UIScreen.main.bounds)
+    // --- CRITICAL: Do NOT create a UIWindow or RCTRootView ---
+    // By not creating a window or calling startReactNative with a window,
+    // the app launches without ever presenting a user interface.
+    // The React Native bridge will still be initialized and JS code will run.
 
-    factory.startReactNative(
-      withModuleName: "RemoteEyeMobile",
-      in: window,
-      launchOptions: launchOptions
-    )
+    // Create a bridge manually to run JS in headless mode
+    let bridge = RCTBridge(delegate: delegate, launchOptions: launchOptions)
+
+    // Store reference to prevent deallocation
+    _ = bridge
+
+    // The app will now launch, run the JS code in the background, and that's it.
+    NSLog("[AppDelegate] Headless app launched. No UI will be presented.")
 
     return true
   }
