@@ -69,9 +69,13 @@ class PairingResponse(BaseModel):
 
 
 class JWTPayload(BaseModel):
-    """JWT token payload structure."""
+    """JWT token payload structure.
+
+    Note: exp is Optional because refresh tokens for trusted
+    first-party devices may have no expiration.
+    """
 
     sub: str  # device_id or controller_id
     type: ClientType
     iat: datetime
-    exp: datetime
+    exp: Optional[datetime] = None  # None = no expiration (for refresh tokens)

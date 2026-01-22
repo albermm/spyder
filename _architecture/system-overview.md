@@ -338,7 +338,7 @@ dashboard/
 |-------|----------|---------|
 | Pairing Code | 10 min | One-time device registration |
 | Access Token | 60 min | API/WebSocket authentication |
-| Refresh Token | 7 days | Obtain new access tokens |
+| Refresh Token | No expiration | Obtain new access tokens (trusted device auth) |
 
 ### JWT Structure
 

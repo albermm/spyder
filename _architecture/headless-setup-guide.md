@@ -71,7 +71,7 @@ On the Pairing Screen:
    - The app will call `POST /api/auth/register` with the pairing code
    - On success, JWT tokens are stored in AsyncStorage:
      - `TOKEN`: Access token (60-minute expiry)
-     - `REFRESH_TOKEN`: Refresh token (7-day expiry)
+     - `REFRESH_TOKEN`: Refresh token (no expiration for trusted devices)
      - `DEVICE_ID`: Unique device identifier
 
 4. **Verify Connection**: The app transitions to the Main Screen showing:
@@ -278,7 +278,7 @@ iOS may terminate background apps to reclaim resources. To maximize survival:
 ## Security Considerations
 
 1. **Credentials are stored in AsyncStorage** - Consider using Keychain for production
-2. **Tokens have limited lifetime** - Access: 60 min, Refresh: 7 days
+2. **Access tokens have limited lifetime** - 60 min; refresh tokens have no expiration for trusted device auth
 3. **Pairing codes are one-time use** - Cannot be reused after device registration
 4. **WebSocket connections are authenticated** - JWT required in handshake
 

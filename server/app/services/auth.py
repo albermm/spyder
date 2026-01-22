@@ -68,31 +68,57 @@ class AuthService:
         subject: str,
         client_type: ClientType,
     ) -> str:
-        """Create a JWT refresh token."""
-        expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
+        """Create a JWT refresh token.
+
+        For trusted first-party device-to-server communication,
+        refresh tokens have no expiration by default. This allows
+        headless devices to maintain authentication indefinitely
+        without requiring re-pairing.
+        """
         payload = {
             "sub": subject,
             "type": client_type.value,
             "iat": datetime.utcnow(),
-            "exp": expire,
             "refresh": True,
         }
+
+        # Only add expiration if configured (None = no expiration)
+        if settings.refresh_token_expire_days is not None:
+            expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
+            payload["exp"] = expire
+
         return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
     @staticmethod
     def decode_token(token: str) -> Optional[JWTPayload]:
-        """Decode and validate a JWT token."""
+        """Decode and validate a JWT token.
+
+        Handles both tokens with and without expiration.
+        Refresh tokens may have no expiration for long-lived device auth.
+        """
         try:
+            # Disable exp verification for tokens that may not have it
             payload = jwt.decode(
                 token,
                 settings.secret_key,
                 algorithms=[settings.jwt_algorithm],
+                options={"verify_exp": False},  # We'll check manually
             )
+
+            # Parse expiration if present
+            exp = None
+            if "exp" in payload:
+                exp = datetime.fromtimestamp(payload["exp"])
+                # Check if expired (only if exp is present)
+                if exp < datetime.utcnow():
+                    logger.warning("Token has expired")
+                    return None
+
             return JWTPayload(
                 sub=payload["sub"],
                 type=ClientType(payload["type"]),
                 iat=datetime.fromtimestamp(payload["iat"]),
-                exp=datetime.fromtimestamp(payload["exp"]),
+                exp=exp,
             )
         except JWTError as e:
             logger.warning(f"JWT decode error: {e}")

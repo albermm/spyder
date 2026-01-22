@@ -31,8 +31,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(
         default=60, description="Access token expiration in minutes"
     )
-    refresh_token_expire_days: int = Field(
-        default=7, description="Refresh token expiration in days"
+    refresh_token_expire_days: Optional[int] = Field(
+        default=None,
+        description="Refresh token expiration in days (None = no expiration)",
     )
 
     # Database
