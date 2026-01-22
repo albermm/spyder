@@ -89,15 +89,22 @@ class DeviceResponse(BaseModel):
 
 
 class DeviceStatusUpdate(BaseModel):
-    """Real-time device status update."""
+    """Real-time device status update.
+
+    Accepts both camelCase (from mobile) and snake_case field names.
+    """
 
     battery: int = Field(..., ge=0, le=100)
     charging: bool
-    network_type: str = Field(..., pattern="^(wifi|cellular|none)$")
-    signal_strength: int = Field(..., ge=0, le=4)
-    camera_active: bool
-    audio_active: bool
-    location_enabled: bool
+    network_type: str = Field(
+        ..., pattern="^(wifi|cellular|none)$", alias="networkType"
+    )
+    signal_strength: int = Field(..., ge=0, le=4, alias="signalStrength")
+    camera_active: bool = Field(..., alias="cameraActive")
+    audio_active: bool = Field(..., alias="audioActive")
+    location_enabled: bool = Field(..., alias="locationEnabled")
+
+    model_config = {"populate_by_name": True}  # Accept both alias and field name
 
 
 class DeviceDetailResponse(BaseModel):
