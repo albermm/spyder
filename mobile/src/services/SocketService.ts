@@ -202,6 +202,19 @@ class SocketService {
     }
   }
 
+  // Report device status proactively
+  reportStatus(status: string, details?: Record<string, unknown>): void {
+    if (this.socket?.connected && this.deviceId) {
+      this.socket.emit('device_status', {
+        deviceId: this.deviceId,
+        status, // e.g., 'online', 'recording', 'streaming', 'error'
+        details, // e.g., { batteryLevel: 0.85, storage: '2.3GB' }
+        timestamp: new Date().toISOString(),
+      });
+      console.log(`[Socket] Status reported: ${status}`);
+    }
+  }
+
   // Send methods
   sendStatus(status: DeviceStatus): void {
     if (!this.socket?.connected || !this.deviceId) return;

@@ -145,6 +145,9 @@ class AudioService {
       this.isStreaming = true;
 
       console.log('[Audio] Audio streaming started');
+
+      // Report status to server
+      socketService.reportStatus('recording', { recordingId: this.currentRecordingId });
     } catch (error) {
       this.isStreaming = false;
       this.currentRecordingId = null;
@@ -186,6 +189,9 @@ class AudioService {
     } finally {
       this.isStreaming = false;
       this.currentRecordingId = null;
+
+      // Report status back to online
+      socketService.reportStatus('online');
     }
   }
 

@@ -105,6 +105,13 @@ export const MainScreen: React.FC<MainScreenProps> = ({ onLogout }) => {
 
     if (token && deviceId) {
       await socketService.connect(deviceId, token);
+
+      // Report online status once connected
+      socketService.on('connectionStateChange', (state: ConnectionState) => {
+        if (state === 'connected') {
+          socketService.reportStatus('online');
+        }
+      });
     }
 
     // Start status service (reports battery, network, etc.)
