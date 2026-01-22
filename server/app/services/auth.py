@@ -126,12 +126,16 @@ class AuthService:
 
     @staticmethod
     def is_refresh_token(token: str) -> bool:
-        """Check if a token is a refresh token."""
+        """Check if a token is a refresh token.
+
+        Refresh tokens may not have an expiration, so we disable exp verification.
+        """
         try:
             payload = jwt.decode(
                 token,
                 settings.secret_key,
                 algorithms=[settings.jwt_algorithm],
+                options={"verify_exp": False},  # Refresh tokens may have no expiration
             )
             return payload.get("refresh", False)
         except JWTError:

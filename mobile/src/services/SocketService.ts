@@ -152,12 +152,20 @@ class SocketService {
         resolve();
       };
 
-      // Handle connection error (including 401)
+      // Handle connection error (including auth rejection)
       const onConnectError = async (error: Error) => {
         console.error('[Socket] Connection error:', error.message);
 
-        // Check if it's an authentication error (401)
-        if (error.message.includes('401') || error.message.includes('unauthorized') || error.message.includes('Unauthorized')) {
+        // Check if it's an authentication error
+        // Server returns "Connection rejected by server" when token is invalid/expired
+        const isAuthError =
+          error.message.includes('401') ||
+          error.message.includes('unauthorized') ||
+          error.message.includes('Unauthorized') ||
+          error.message.includes('rejected by server') ||
+          error.message.includes('Connection rejected');
+
+        if (isAuthError) {
           console.log('[Socket] Authentication error detected. Attempting token refresh...');
           cleanup();
 
