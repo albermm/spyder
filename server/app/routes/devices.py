@@ -227,6 +227,13 @@ class PushTokenRequest(BaseModel):
     platform: str  # 'ios' or 'android'
 
 
+class DeviceCommandRequest(BaseModel):
+    """Request model for sending a command to a device via push."""
+
+    action: str
+    params: Optional[dict] = None
+
+
 @router.post("/{device_id}/push-token", response_model=dict)
 async def register_push_token(
     device_id: str,
@@ -248,6 +255,51 @@ async def register_push_token(
     return {
         "success": True,
         "message": "Push token registered successfully",
+    }
+
+
+@router.post("/{device_id}/command", response_model=dict)
+async def send_command_to_device(
+    device_id: str,
+    command: DeviceCommandRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Send a command to a device via a silent push notification.
+
+    The mobile client expects the command in the `action` field of the data
+    payload, e.g. `{ "action": "START_RECORDING" }`.
+    """
+
+    device = await crud.get_device(db, device_id)
+    if not device or not device.push_token:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "DEVICE_NOT_FOUND",
+                "message": "Device not found or no push token registered",
+            },
+        )
+
+    sent = await push_service.send_command_notification(
+        fcm_token=device.push_token,
+        device_id=device_id,
+        command=command.action,
+        params=command.params,
+    )
+
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "code": "PUSH_FAILED",
+                "message": "Failed to send command notification",
+            },
+        )
+
+    return {
+        "success": True,
+        "status": "command_sent",
+        "message": f"Command '{command.action}' sent to device {device_id}",
     }
 
 

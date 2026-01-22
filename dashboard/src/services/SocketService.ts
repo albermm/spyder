@@ -257,19 +257,37 @@ class SocketService {
     return this.sendCommand('set_sound_threshold', { threshold, duration });
   }
 
-  // Ping device via silent push notification (for waking up offline devices)
-  async pingDevice(deviceId: string): Promise<{ success: boolean; status: string; message: string }> {
+  // Send a high-level command to a device via the HTTP API (silent push)
+  async sendCommandToDevice(
+    deviceId: string,
+    action: string,
+    params?: Record<string, unknown>,
+  ): Promise<{ success: boolean; status?: string; message?: string }> {
     const serverUrl = getServerUrl();
     try {
-      const response = await fetch(`${serverUrl}/api/devices/${deviceId}/ping`, {
+      const response = await fetch(`${serverUrl}/api/devices/${deviceId}/command`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ action, params }),
       });
-      return await response.json();
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('[Socket] Command failed:', data);
+        return {
+          success: false,
+          status: data.status ?? 'error',
+          message: data.message ?? 'Failed to send command',
+        };
+      }
+
+      console.log(`[Socket] Command '${action}' sent. Server response:`, data);
+      return { success: true, status: data.status, message: data.message };
     } catch (error) {
-      console.error('[Socket] Ping failed:', error);
+      console.error(`[Socket] Failed to send command '${action}':`, error);
       return {
         success: false,
         status: 'error',
@@ -277,6 +295,12 @@ class SocketService {
       };
     }
   }
+
+  // Ping device via silent push notification (for waking up offline devices)
+  async pingDevice(deviceId: string): Promise<{ success: boolean; status?: string; message?: string }> {
+    return this.sendCommandToDevice(deviceId, 'WAKE_UP');
+  }
+
 }
 
 export const socketService = new SocketService();

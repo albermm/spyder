@@ -79,14 +79,42 @@ export function Dashboard() {
     try {
       const result = await socketService.pingDevice(selectedDevice.id);
       if (result.success) {
-        setPingStatus(result.message);
+        setPingStatus(result.message ?? 'Ping sent');
       } else {
-        setPingStatus(`Failed: ${result.message}`);
+        setPingStatus(`Failed: ${result.message ?? 'Unknown error'}`);
       }
     } catch (error) {
       setPingStatus('Ping failed');
     }
     // Clear status after 3 seconds
+    setTimeout(() => setPingStatus(null), 3000);
+  };
+
+  const handleStartRecording = async () => {
+    if (!selectedDevice) return;
+
+    setPingStatus('Sending START_RECORDING...');
+    try {
+      const result = await socketService.sendCommandToDevice(selectedDevice.id, 'START_RECORDING');
+      setPingStatus(result.success ? 'Start recording command sent' : `Failed: ${result.message ?? 'Unknown error'}`);
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      setPingStatus('Failed to start recording');
+    }
+    setTimeout(() => setPingStatus(null), 3000);
+  };
+
+  const handleStopRecording = async () => {
+    if (!selectedDevice) return;
+
+    setPingStatus('Sending STOP_RECORDING...');
+    try {
+      const result = await socketService.sendCommandToDevice(selectedDevice.id, 'STOP_RECORDING');
+      setPingStatus(result.success ? 'Stop recording command sent' : `Failed: ${result.message ?? 'Unknown error'}`);
+    } catch (error) {
+      console.error('Failed to stop recording:', error);
+      setPingStatus('Failed to stop recording');
+    }
     setTimeout(() => setPingStatus(null), 3000);
   };
 
@@ -170,6 +198,18 @@ export function Dashboard() {
                     {pingStatus && (
                       <span className="text-sm text-slate-400">{pingStatus}</span>
                     )}
+                    <button
+                      onClick={handleStartRecording}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition"
+                    >
+                      Start Recording
+                    </button>
+                    <button
+                      onClick={handleStopRecording}
+                      className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm transition"
+                    >
+                      Stop Recording
+                    </button>
                     <button
                       onClick={handlePingDevice}
                       className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm transition"
