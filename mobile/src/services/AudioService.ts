@@ -77,10 +77,10 @@ class AudioService {
       });
     }
 
-    // R2 UPLOAD: Define a unique path for the recording file
-    const recordingId = this.generateRecordingId();
+    // Generate recording ID ONCE and use it for both the file path and currentRecordingId
+    this.currentRecordingId = this.generateRecordingId();
     const baseDir = Platform.OS === 'ios' ? RNFS.DocumentDirectoryPath : RNFS.CachesDirectoryPath;
-    this.localRecordingPath = `${baseDir}/${recordingId}.wav`;
+    this.localRecordingPath = `${baseDir}/${this.currentRecordingId}.wav`;
 
     LiveAudioStream.init({
       sampleRate: SAMPLE_RATE,
@@ -88,7 +88,7 @@ class AudioService {
       bitsPerSample: BITS_PER_SAMPLE,
       audioSource: 6,
       bufferSize: BUFFER_SIZE,
-      wavFile: this.localRecordingPath, // R2 UPLOAD: Tell the library to save the WAV file here
+      wavFile: this.localRecordingPath,
     });
 
     LiveAudioStream.on('data', (data: string) => {
@@ -134,10 +134,10 @@ class AudioService {
     if (!hasPermission) throw new Error('Microphone permission not granted');
 
     try {
-      // R2 UPLOAD: Re-initialize to get a new unique file path for each recording
+      // Re-initialize to get a new unique file path for each recording
+      // This also sets this.currentRecordingId and this.localRecordingPath
       this.initializeLiveAudioStream();
 
-      this.currentRecordingId = this.generateRecordingId();
       this.recordingStartTime = Date.now();
       console.log(`[Audio] Starting audio streaming: ${this.currentRecordingId}`);
 
