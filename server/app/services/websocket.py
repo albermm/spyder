@@ -191,7 +191,14 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
 
     @sio.on("device:photo")
     async def handle_device_photo(sid: str, data: dict) -> None:
-        """Handle captured photo from device."""
+        """
+        Handle captured photo from device (LEGACY - server-side upload).
+
+        This is the old flow where base64 data goes through the server.
+        Kept for backwards compatibility with older mobile app versions.
+        New clients should use captureAndUploadPhoto() which triggers
+        device:photo_complete instead.
+        """
         device_id = data.get("deviceId")
         photo_data = data.get("photo", {})
 
@@ -203,7 +210,7 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
         storage_key = None
         size = len(base64_data)
 
-        # Upload to R2 storage
+        # Upload to R2 storage (server-side - less efficient)
         try:
             if base64_data and storage_service.is_configured:
                 result = await storage_service.upload_photo(
@@ -213,7 +220,7 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
                 )
                 storage_key = result.get("key")
                 size = result.get("size", size)
-                logger.info(f"Photo uploaded to R2: {storage_key}")
+                logger.info(f"Photo uploaded to R2 (legacy flow): {storage_key}")
         except Exception as e:
             logger.error(f"Failed to upload photo to R2: {e}")
 
@@ -271,7 +278,7 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
 
     @sio.on("device:recording_complete")
     async def handle_recording_complete(sid: str, data: dict) -> None:
-        """Handle recording completion notification."""
+        """Handle recording completion notification (legacy - for backwards compatibility)."""
         device_id = data.get("deviceId")
         recording_data = data.get("recording", {})
 
@@ -295,6 +302,162 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
         await sio.emit(
             "device:recording_complete",
             data,
+            room=f"controllers:{device_id}",
+        )
+
+    @sio.on("device:audio_complete")
+    async def handle_audio_complete(sid: str, data: dict) -> None:
+        """
+        Handle audio upload completion notification.
+        Called after device successfully uploads audio to R2.
+        This is the preferred flow - direct device-to-R2 upload.
+        """
+        device_id = data.get("deviceId")
+        if not device_id:
+            return
+
+        recording_id = data.get("recordingId")
+        storage_key = data.get("storageKey")
+        filename = data.get("filename", f"audio_{datetime.utcnow().timestamp()}.wav")
+        size = data.get("size", 0)
+        duration = data.get("duration", 0)
+        triggered_by = data.get("triggeredBy", "manual")
+
+        logger.info(f"Audio upload complete: {storage_key} ({size} bytes, {duration}s)")
+
+        # Create database record with R2 storage key
+        async with AsyncSessionLocal() as db:
+            recording = await crud.create_recording(
+                db=db,
+                device_id=device_id,
+                recording_type="audio",
+                filename=filename,
+                size=size,
+                duration=duration,
+                storage_key=storage_key,
+                triggered_by=triggered_by,
+            )
+            await db.commit()
+
+            # Notify controllers
+            await sio.emit(
+                "device:recording_complete",
+                {
+                    "type": "device:recording_complete",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "deviceId": device_id,
+                    "recording": {
+                        "id": recording.id,
+                        "type": "audio",
+                        "filename": filename,
+                        "duration": duration,
+                        "size": size,
+                        "storageKey": storage_key,
+                        "triggeredBy": triggered_by,
+                    },
+                },
+                room=f"controllers:{device_id}",
+            )
+
+    @sio.on("device:photo_complete")
+    async def handle_photo_complete(sid: str, data: dict) -> None:
+        """
+        Handle photo upload completion notification.
+        Called after device successfully uploads photo directly to R2.
+        This is the unified flow - same as audio.
+        """
+        device_id = data.get("deviceId")
+        if not device_id:
+            return
+
+        recording_id = data.get("recordingId")
+        storage_key = data.get("storageKey")
+        filename = data.get("filename", f"photo_{datetime.utcnow().timestamp()}.jpg")
+        size = data.get("size", 0)
+        width = data.get("width")
+        height = data.get("height")
+
+        logger.info(f"Photo upload complete: {storage_key} ({size} bytes)")
+
+        # Create database record with R2 storage key
+        async with AsyncSessionLocal() as db:
+            extra_data = {}
+            if width and height:
+                extra_data["dimensions"] = {"width": width, "height": height}
+
+            recording = await crud.create_recording(
+                db=db,
+                device_id=device_id,
+                recording_type="photo",
+                filename=filename,
+                size=size,
+                storage_key=storage_key,
+                triggered_by="manual",
+                extra_data=extra_data if extra_data else None,
+            )
+            await db.commit()
+
+            # Notify controllers (without raw image data)
+            await sio.emit(
+                "device:photo",
+                {
+                    "type": "device:photo",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "deviceId": device_id,
+                    "recordingId": recording.id,
+                    "storageKey": storage_key,
+                    "photo": {
+                        "stored": True,
+                        "filename": filename,
+                        "width": width,
+                        "height": height,
+                    },
+                },
+                room=f"controllers:{device_id}",
+            )
+
+    @sio.on("device:upload_failed")
+    async def handle_upload_failed(sid: str, data: dict) -> None:
+        """
+        Handle upload failure notification.
+        Closes the reliability gap - we now know when uploads fail.
+        """
+        device_id = data.get("deviceId")
+        if not device_id:
+            return
+
+        recording_id = data.get("recordingId")
+        media_type = data.get("mediaType", "unknown")
+        error = data.get("error", "Unknown error")
+        filename = data.get("filename")
+
+        logger.error(f"Upload failed for {media_type} {recording_id}: {error}")
+
+        # Create a failed recording entry for tracking
+        async with AsyncSessionLocal() as db:
+            await crud.create_recording(
+                db=db,
+                device_id=device_id,
+                recording_type=media_type if media_type in ["audio", "photo"] else "audio",
+                filename=filename or f"failed_{recording_id}",
+                size=0,
+                storage_key=None,  # No storage key - upload failed
+                triggered_by="manual",
+                extra_data={"status": "upload_failed", "error": error},
+            )
+            await db.commit()
+
+        # Notify controllers of the failure
+        await sio.emit(
+            "device:upload_failed",
+            {
+                "type": "device:upload_failed",
+                "timestamp": datetime.utcnow().isoformat(),
+                "deviceId": device_id,
+                "recordingId": recording_id,
+                "mediaType": media_type,
+                "error": error,
+            },
             room=f"controllers:{device_id}",
         )
 

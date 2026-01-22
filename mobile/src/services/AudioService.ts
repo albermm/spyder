@@ -6,7 +6,8 @@
 import LiveAudioStream from 'react-native-live-audio-stream';
 import { AppState, Platform, PermissionsAndroid } from 'react-native';
 import RNFS from 'react-native-fs';
-import { CONFIG } from '../config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CONFIG, getServerUrl } from '../config';
 import { socketService } from './SocketService';
 import type { SoundDetectionSettings, RecordingInfo } from '../types';
 import { NativeModules } from 'react-native';
@@ -160,30 +161,28 @@ class AudioService {
   async stopAudioStreaming(): Promise<void> {
     if (!this.isStreaming) return;
 
+    // Capture these before resetting state
+    const recordingId = this.currentRecordingId;
+    const localPath = this.localRecordingPath;
+
     try {
       await LiveAudioStream.stop();
       const duration = Math.floor((Date.now() - this.recordingStartTime) / 1000);
       console.log(`[Audio] Audio streaming stopped. Duration: ${duration}s`);
 
-      // R2 UPLOAD: Trigger the upload after the file is finalized
-      if (this.localRecordingPath) {
-        console.log(`[Audio] Local recording saved at: ${this.localRecordingPath}`);
-        // We run the upload in the background without blocking the stop process
-        this.uploadToR2(this.localRecordingPath).catch(err => 
-          console.error("[Audio] R2 Upload failed in background:", err)
+      // Upload to R2 in background (don't block the stop process)
+      // The upload will notify server on success OR failure
+      if (localPath && recordingId) {
+        console.log(`[Audio] Local recording saved at: ${localPath}`);
+        this.uploadToR2(localPath, recordingId, duration, 'manual').catch(err =>
+          console.error('[Audio] R2 Upload failed in background:', err)
         );
       }
 
-      if (this.currentRecordingId) {
-        const recordingInfo: RecordingInfo = {
-          id: this.currentRecordingId,
-          type: 'audio',
-          duration,
-          size: 0, // R2 UPLOAD: You could get the file size here if needed
-          triggeredBy: 'manual',
-        };
-        socketService.sendRecordingComplete(recordingInfo);
-      }
+      // NOTE: We no longer send sendRecordingComplete here.
+      // The server is notified via sendAudioUploadComplete after successful R2 upload,
+      // or via sendUploadFailed if the upload fails.
+
     } catch (error) {
       console.error('[Audio] Failed to stop audio streaming:', error);
     } finally {
@@ -195,39 +194,59 @@ class AudioService {
     }
   }
 
-  // R2 UPLOAD: New method to handle the upload process
-  private async uploadToR2(localFilePath: string): Promise<void> {
-    if (!this.currentRecordingId) {
-      console.error('[Audio] Cannot upload: No recording ID.');
-      return;
-    }
-
+  /**
+   * Upload recorded audio directly to R2 and notify server.
+   * Reports failures to server to close the "silent failure" reliability gap.
+   */
+  private async uploadToR2(
+    localFilePath: string,
+    recordingId: string,
+    duration: number,
+    triggeredBy: 'manual' | 'sound_detection' = 'manual'
+  ): Promise<void> {
     this.isUploading = true;
-    console.log(`[Audio] Starting upload for ${this.currentRecordingId}.wav`);
+    const filename = `${recordingId}.wav`;
+    console.log(`[Audio] Starting upload for ${filename}`);
 
     try {
-      // 1. Get a presigned URL from your server
-      const fileName = `${this.currentRecordingId}.wav`;
-      const response = await fetch(`${CONFIG.SERVER_URL}/api/r2/presigned-url`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileName, contentType: 'audio/wav' }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status} for presigned URL.`);
+      // 1. Get device ID from storage
+      const deviceId = await AsyncStorage.getItem(CONFIG.STORAGE_KEYS.DEVICE_ID);
+      if (!deviceId) {
+        throw new Error('Device not registered');
       }
 
-      const { url, key }: PresignedUrlResponse = await response.json();
-      console.log(`[Audio] Received presigned URL for key: ${key}`);
+      // 2. Get presigned URL from server
+      const serverUrl = getServerUrl();
+      const token = await AsyncStorage.getItem(CONFIG.STORAGE_KEYS.TOKEN);
 
-      // 2. Read the local file as a base64 string
+      const presignedResponse = await fetch(`${serverUrl}/api/media/presigned-url`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({
+          device_id: deviceId,
+          file_name: filename,
+          content_type: 'audio/wav',
+          media_type: 'audio',
+        }),
+      });
+
+      if (!presignedResponse.ok) {
+        throw new Error(`Failed to get presigned URL: ${presignedResponse.status}`);
+      }
+
+      const { url, key }: PresignedUrlResponse = await presignedResponse.json();
+      console.log(`[Audio] Got presigned URL for: ${key}`);
+
+      // 3. Read the local file as base64
       const base64Data = await RNFS.readFile(localFilePath, 'base64');
 
-      // 3. Convert base64 to a Blob for the upload
+      // 4. Convert base64 to Blob and upload directly to R2
       const audioBlob = await fetch(`data:audio/wav;base64,${base64Data}`).then(res => res.blob());
+      const size = audioBlob.size;
 
-      // 4. Upload the file to R2 using the presigned URL
       const uploadResponse = await fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'audio/wav' },
@@ -235,19 +254,43 @@ class AudioService {
       });
 
       if (!uploadResponse.ok) {
-        throw new Error(`R2 upload failed with status: ${uploadResponse.status}`);
+        throw new Error(`R2 upload failed: ${uploadResponse.status}`);
       }
 
-      console.log(`[Audio] Successfully uploaded ${fileName} to R2.`);
-      // Optional: Notify your server that the upload is complete
-      // await fetch(`${CONFIG.API_ENDPOINT}/api/r2/upload-complete`, { ... });
+      console.log(`[Audio] Successfully uploaded ${filename} to R2`);
+
+      // 5. Notify server that upload is complete (creates database record)
+      socketService.sendAudioUploadComplete({
+        recordingId,
+        storageKey: key,
+        filename,
+        size,
+        duration,
+        triggeredBy,
+      });
+
+      // 6. Clean up local file after successful upload
+      try {
+        await RNFS.unlink(localFilePath);
+        console.log(`[Audio] Cleaned up local file: ${localFilePath}`);
+      } catch {
+        // Ignore cleanup errors
+      }
 
     } catch (error) {
-      console.error('[Audio] R2 Upload Error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[Audio] R2 Upload Error: ${errorMessage}`);
+
+      // CRITICAL: Report failure to server to close the reliability gap
+      socketService.sendUploadFailed({
+        recordingId,
+        mediaType: 'audio',
+        error: errorMessage,
+        filename,
+      });
+
     } finally {
       this.isUploading = false;
-      // Optional: Clean up the local file after successful upload
-      // await RNFS.unlink(localFilePath);
     }
   }
 

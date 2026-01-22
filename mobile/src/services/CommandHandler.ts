@@ -91,13 +91,8 @@ class CommandHandlerService {
   }
 
   private async handleCapturePhoto(): Promise<void> {
-    const photo = await cameraService.capturePhoto();
-    socketService.sendPhoto({
-      data: photo.data,
-      width: photo.width,
-      height: photo.height,
-      filename: `photo_${Date.now()}.jpg`,
-    });
+    // Use direct R2 upload - bypasses server bandwidth entirely
+    await cameraService.captureAndUploadPhoto();
   }
 
   // Audio commands

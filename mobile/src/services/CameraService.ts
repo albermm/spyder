@@ -1,14 +1,22 @@
 /**
  * RemoteEye Mobile - Camera Service
- * Handles camera capture and streaming
+ * Handles camera capture and streaming with direct R2 uploads.
  */
 
 import { Camera } from 'react-native-vision-camera';
 import RNFS from 'react-native-fs';
 import ImageResizer from 'react-native-image-resizer';
-import { CONFIG } from '../config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CONFIG, getServerUrl } from '../config';
 import { socketService } from './SocketService';
 import type { CameraSettings, CameraFrame, CameraPosition } from '../types';
+
+// R2 UPLOAD: Type for presigned URL response
+interface PresignedUrlResponse {
+  url: string;
+  key: string;
+  expires_in: number;
+}
 
 interface FrameCallback {
   (frame: CameraFrame): void;
@@ -238,7 +246,7 @@ class CameraService {
     }
   }
 
-  // Single photo capture
+  // Single photo capture (returns base64 for legacy compatibility)
   async capturePhoto(): Promise<{ data: string; width: number; height: number }> {
     if (!this.cameraRef) {
       throw new Error('Camera not initialized');
@@ -264,6 +272,118 @@ class CameraService {
       width: photo.width,
       height: photo.height,
     };
+  }
+
+  /**
+   * Capture a photo and upload directly to R2.
+   * This is the preferred method - bypasses server bandwidth entirely.
+   */
+  async captureAndUploadPhoto(): Promise<void> {
+    if (!this.cameraRef) {
+      throw new Error('Camera not initialized');
+    }
+
+    const recordingId = `photo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const filename = `${recordingId}.jpg`;
+
+    console.log(`[Camera] Capturing photo for direct R2 upload: ${recordingId}`);
+
+    try {
+      // 1. Capture the photo
+      const photo = await this.cameraRef.takePhoto({
+        enableShutterSound: false,
+      });
+
+      // 2. Read and resize the photo
+      const base64Data = await this.readPhotoAsBase64(
+        photo.path,
+        photo.width,
+        photo.height,
+        0.85
+      );
+
+      if (!base64Data) {
+        throw new Error('Failed to read photo');
+      }
+
+      // Clean up original temp file
+      try {
+        await RNFS.unlink(photo.path);
+      } catch {
+        // Ignore cleanup errors
+      }
+
+      // 3. Get device ID from storage
+      const deviceId = await AsyncStorage.getItem(CONFIG.STORAGE_KEYS.DEVICE_ID);
+      if (!deviceId) {
+        throw new Error('Device not registered');
+      }
+
+      // 4. Get presigned URL from server
+      const serverUrl = getServerUrl();
+      const token = await AsyncStorage.getItem(CONFIG.STORAGE_KEYS.TOKEN);
+
+      const presignedResponse = await fetch(`${serverUrl}/api/media/presigned-url`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({
+          device_id: deviceId,
+          file_name: filename,
+          content_type: 'image/jpeg',
+          media_type: 'photo',
+        }),
+      });
+
+      if (!presignedResponse.ok) {
+        throw new Error(`Failed to get presigned URL: ${presignedResponse.status}`);
+      }
+
+      const { url, key }: PresignedUrlResponse = await presignedResponse.json();
+      console.log(`[Camera] Got presigned URL for: ${key}`);
+
+      // 5. Convert base64 to blob and upload directly to R2
+      const imageBlob = await fetch(`data:image/jpeg;base64,${base64Data}`).then(res => res.blob());
+      const size = imageBlob.size;
+
+      const uploadResponse = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/jpeg' },
+        body: imageBlob,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`R2 upload failed: ${uploadResponse.status}`);
+      }
+
+      console.log(`[Camera] Photo uploaded to R2: ${key}`);
+
+      // 6. Notify server that upload is complete
+      socketService.sendPhotoComplete({
+        recordingId,
+        storageKey: key,
+        filename,
+        size,
+        width: photo.width,
+        height: photo.height,
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[Camera] Photo upload failed: ${errorMessage}`);
+
+      // Report failure to server
+      socketService.sendUploadFailed({
+        recordingId,
+        mediaType: 'photo',
+        error: errorMessage,
+        filename,
+      });
+
+      throw error;
+    }
   }
 
   // Local frame callback (for preview)

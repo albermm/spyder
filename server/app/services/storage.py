@@ -187,6 +187,46 @@ class StorageService:
                 logger.error(f"Failed to generate presigned URL: {e}")
                 return None
 
+    async def get_upload_url(
+        self,
+        key: str,
+        content_type: str,
+        expires_in: int = 3600,
+    ) -> Optional[str]:
+        """
+        Generate a presigned URL for uploading a file directly to R2.
+
+        This enables client-side direct uploads without going through the server,
+        reducing bandwidth and improving scalability.
+
+        Args:
+            key: The storage key (path in the bucket)
+            content_type: MIME type of the file (e.g., 'audio/wav', 'image/jpeg')
+            expires_in: URL expiration time in seconds (default 1 hour)
+
+        Returns:
+            Presigned URL for PUT operation or None if not configured
+        """
+        if not self.is_configured or not key:
+            return None
+
+        session = self._get_session()
+        async with session.client(**self._get_client_config()) as s3:
+            try:
+                url = await s3.generate_presigned_url(
+                    "put_object",
+                    Params={
+                        "Bucket": self.settings.r2_bucket_name,
+                        "Key": key,
+                        "ContentType": content_type,
+                    },
+                    ExpiresIn=expires_in,
+                )
+                return url
+            except Exception as e:
+                logger.error(f"Failed to generate presigned upload URL: {e}")
+                return None
+
     async def delete_file(self, key: str) -> bool:
         """
         Delete a file from R2.

@@ -504,6 +504,73 @@ class SocketService {
     });
   }
 
+  /**
+   * Notify server that a media upload to R2 failed.
+   * This closes the reliability gap where uploads could fail silently.
+   */
+  sendUploadFailed(data: {
+    recordingId: string;
+    mediaType: 'audio' | 'photo';
+    error: string;
+    filename?: string;
+  }): void {
+    if (!this.socket?.connected || !this.deviceId) return;
+
+    this.socket.emit('device:upload_failed', {
+      type: 'device:upload_failed',
+      timestamp: new Date().toISOString(),
+      deviceId: this.deviceId,
+      ...data,
+    });
+    console.log(`[Socket] Upload failure reported: ${data.mediaType} - ${data.recordingId}`);
+  }
+
+  /**
+   * Notify server that a photo was successfully uploaded to R2.
+   * Used for direct client-to-R2 photo uploads (unified flow with audio).
+   */
+  sendPhotoComplete(data: {
+    recordingId: string;
+    storageKey: string;
+    filename: string;
+    size: number;
+    width?: number;
+    height?: number;
+  }): void {
+    if (!this.socket?.connected || !this.deviceId) return;
+
+    this.socket.emit('device:photo_complete', {
+      type: 'device:photo_complete',
+      timestamp: new Date().toISOString(),
+      deviceId: this.deviceId,
+      ...data,
+    });
+    console.log(`[Socket] Photo upload complete: ${data.storageKey}`);
+  }
+
+  /**
+   * Notify server that an audio recording was successfully uploaded to R2.
+   * This replaces the old sendRecordingComplete for audio uploads.
+   */
+  sendAudioUploadComplete(data: {
+    recordingId: string;
+    storageKey: string;
+    filename: string;
+    size: number;
+    duration: number;
+    triggeredBy: 'manual' | 'sound_detection';
+  }): void {
+    if (!this.socket?.connected || !this.deviceId) return;
+
+    this.socket.emit('device:audio_complete', {
+      type: 'device:audio_complete',
+      timestamp: new Date().toISOString(),
+      deviceId: this.deviceId,
+      ...data,
+    });
+    console.log(`[Socket] Audio upload complete: ${data.storageKey}`);
+  }
+
   sendCommandAck(commandId: string, status: CommandStatus, error?: string): void {
     if (!this.socket?.connected || !this.deviceId) return;
 

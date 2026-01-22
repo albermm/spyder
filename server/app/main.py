@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.db.database import init_db
-from app.routes import auth_router, devices_router, recordings_router
+from app.routes import auth_router, devices_router, media_router, recordings_router
 from app.services.websocket import setup_socketio_handlers
 from app.utils.logger import setup_logging, get_logger
 
@@ -76,6 +76,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Include routers
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(devices_router, prefix="/api/devices", tags=["Devices"])
+app.include_router(media_router, prefix="/api/media", tags=["Media"])
 app.include_router(recordings_router, prefix="/api/recordings", tags=["Recordings"])
 
 
