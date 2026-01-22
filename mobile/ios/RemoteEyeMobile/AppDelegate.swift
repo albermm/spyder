@@ -6,18 +6,34 @@ import FirebaseCore
 import FirebaseMessaging
 import UserNotifications
 
+// =============================================================================
+// SETUP MODE FLAG
+// =============================================================================
+// Set to `true` to enable UI for initial device pairing.
+// Set to `false` for headless background operation after pairing is complete.
+//
+// SETUP PROCESS:
+// 1. Set isSetupMode = true, build and install the app
+// 2. Complete pairing on the PairingScreen (credentials saved to AsyncStorage)
+// 3. Verify device appears online on dashboard
+// 4. Set isSetupMode = false, rebuild and reinstall
+// 5. App now runs headlessly with stored credentials
+// =============================================================================
+private let isSetupMode = false
+
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
   var window: UIWindow?
 
   var reactNativeDelegate: ReactNativeDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
+  var bridge: RCTBridge?  // Store bridge reference to prevent deallocation
 
   func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    // --- Standard Firebase Initialization (Keep this) ---
+    // --- Standard Firebase Initialization ---
     FirebaseApp.configure()
 
     // Set up push notifications
@@ -32,8 +48,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     )
     application.registerForRemoteNotifications()
 
-    // --- React Native Bridge Initialization (Modified) ---
-    // We initialize the bridge to run the JS code, but we don't attach it to a view.
+    // --- React Native Bridge Initialization ---
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
@@ -41,19 +56,29 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
-    // --- CRITICAL: Do NOT create a UIWindow or RCTRootView ---
-    // By not creating a window or calling startReactNative with a window,
-    // the app launches without ever presenting a user interface.
-    // The React Native bridge will still be initialized and JS code will run.
+    if isSetupMode {
+      // =======================================================================
+      // SETUP MODE: Launch with UI for pairing
+      // =======================================================================
+      NSLog("[AppDelegate] Setup mode enabled. Launching with UI for pairing.")
 
-    // Create a bridge manually to run JS in headless mode
-    let bridge = RCTBridge(delegate: delegate, launchOptions: launchOptions)
+      window = UIWindow(frame: UIScreen.main.bounds)
+      factory.startReactNative(
+        withModuleName: "RemoteEyeMobile",
+        in: window,
+        launchOptions: launchOptions
+      )
+    } else {
+      // =======================================================================
+      // HEADLESS MODE: Run JS in background without UI
+      // =======================================================================
+      // The app will use credentials stored during setup mode.
+      // If not paired, JS will detect this and idle until next setup.
+      NSLog("[AppDelegate] Headless mode. No UI will be presented.")
 
-    // Store reference to prevent deallocation
-    _ = bridge
-
-    // The app will now launch, run the JS code in the background, and that's it.
-    NSLog("[AppDelegate] Headless app launched. No UI will be presented.")
+      // Create bridge manually to run JS without attaching to a view
+      bridge = RCTBridge(delegate: delegate, launchOptions: launchOptions)
+    }
 
     return true
   }

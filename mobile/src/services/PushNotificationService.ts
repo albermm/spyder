@@ -223,6 +223,12 @@ class PushNotificationService {
 
   /**
    * Handles the wake-up logic: ensures the WebSocket is connected.
+   * Uses the self-healing connectWithAutoRefresh method for robust reconnection.
+   *
+   * This method is designed for headless operation:
+   * - No UI interaction - everything happens silently in the background
+   * - Automatically handles token refresh if access token is expired
+   * - Gracefully handles complete auth failure (clears credentials, idles)
    */
   private async handleWakeUp(): Promise<void> {
     console.log('[Push] Handling wake-up...');
@@ -234,22 +240,27 @@ class PushNotificationService {
       return;
     }
 
-    // If not connected, try to reconnect.
-    const token = authService.getToken();
-    const deviceId = authService.getDeviceId();
+    // Use the self-healing connection method that handles token refresh automatically.
+    // This will:
+    // 1. Retrieve credentials from AsyncStorage
+    // 2. Attempt connection
+    // 3. If 401 error, refresh the token and retry
+    // 4. If refresh fails, clear credentials and emit authError
+    console.log('[Push] Reconnecting to WebSocket with auto-refresh...');
 
-    if (token && deviceId) {
-      console.log('[Push] Reconnecting to WebSocket...');
-      try {
-        await socketService.connect(deviceId, token);
+    try {
+      await socketService.connectWithAutoRefresh();
+
+      if (socketService.isConnected()) {
         console.log('[Push] WebSocket reconnected successfully.');
-        // Send heartbeat to confirm we're alive after reconnecting.
         socketService.sendHeartbeat();
-      } catch (error) {
-        console.error('[Push] WebSocket reconnection failed:', error);
+      } else {
+        console.log('[Push] WebSocket connection pending or failed.');
       }
-    } else {
-      console.log('[Push] Cannot reconnect: missing authentication credentials.');
+    } catch (error) {
+      console.error('[Push] WebSocket reconnection failed:', error);
+      // The socketService will have emitted an authError if auth failed completely.
+      // In headless mode, we just log and wait for the next wake-up attempt.
     }
   }
 
