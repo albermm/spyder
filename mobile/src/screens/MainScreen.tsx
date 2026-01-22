@@ -93,32 +93,30 @@ export const MainScreen: React.FC<MainScreenProps> = ({ onLogout }) => {
     // Set up socket listeners
     socketService.on('connectionStateChange', handleConnectionChange);
 
+    // Set initial connection state from socket service
+    setConnectionState(socketService.getConnectionState());
+
     // Request permissions upfront
     await requestAllPermissions();
 
     // Initialize command handler (listens for remote commands)
     commandHandler.initialize();
 
-    // Connect to server
-    const token = authService.getToken();
-    const deviceId = authService.getDeviceId();
-
-    if (token && deviceId) {
-      await socketService.connect(deviceId, token);
-
-      // Report online status once connected
-      socketService.on('connectionStateChange', (state: ConnectionState) => {
-        if (state === 'connected') {
-          socketService.reportStatus('online');
-        }
-      });
+    // NOTE: Connection is handled by App.tsx via connectWithAutoRefresh()
+    // We just need to report status when connected and set up listeners
+    if (socketService.isConnected()) {
+      socketService.reportStatus('online');
     }
+
+    // Report online status when connection state changes to connected
+    socketService.on('connectionStateChange', (state: ConnectionState) => {
+      if (state === 'connected') {
+        socketService.reportStatus('online');
+      }
+    });
 
     // Start status service (reports battery, network, etc.)
     await statusService.start();
-
-    // Initialize push notifications (for silent wake-up)
-    await pushNotificationService.initialize();
 
     // Update local status display
     setDeviceStatus(statusService.getStatus());
@@ -133,11 +131,10 @@ export const MainScreen: React.FC<MainScreenProps> = ({ onLogout }) => {
 
   const cleanup = () => {
     socketService.off('connectionStateChange', handleConnectionChange);
-    socketService.disconnect();
+    // NOTE: Don't disconnect socket here - App.tsx manages the connection
     statusService.stop();
     cameraService.stopStreaming();
     audioService.destroy();
-    pushNotificationService.destroy();
     locationService.destroy();
   };
 
