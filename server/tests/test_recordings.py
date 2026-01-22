@@ -188,14 +188,14 @@ async def test_get_nonexistent_recording(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_download_recording_not_implemented(client: AsyncClient, db_session: AsyncSession):
-    """Test downloading a recording returns not implemented."""
+async def test_download_recording_without_storage_key(client: AsyncClient, db_session: AsyncSession):
+    """Test downloading a recording without storage_key returns 404."""
     recording = await setup_device_with_recording(db_session)
 
     response = await client.get(f"/api/recordings/{recording.id}/download")
-    assert response.status_code == 501
+    assert response.status_code == 404
     data = response.json()
-    assert "NOT_IMPLEMENTED" in str(data)
+    assert "FILE_NOT_STORED" in str(data)
 
 
 @pytest.mark.asyncio

@@ -208,6 +208,7 @@ async def create_recording(
     size: int,
     triggered_by: str,
     duration: Optional[int] = None,
+    storage_key: Optional[str] = None,
     extra_data: Optional[dict] = None,
 ) -> Recording:
     """Create a new recording."""
@@ -216,6 +217,7 @@ async def create_recording(
         device_id=device_id,
         type=recording_type,
         filename=filename,
+        storage_key=storage_key,
         size=size,
         duration=duration,
         triggered_by=triggered_by,

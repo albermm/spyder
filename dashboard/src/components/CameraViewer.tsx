@@ -58,6 +58,10 @@ export function CameraViewer({ deviceId, className = '' }: CameraViewerProps) {
     socketService.capturePhoto();
   };
 
+  const switchCamera = () => {
+    socketService.switchCamera();
+  };
+
   return (
     <div className={`bg-slate-800 rounded-xl p-4 ${className}`}>
       <div className="flex justify-between items-center mb-4">
@@ -129,6 +133,15 @@ export function CameraViewer({ deviceId, className = '' }: CameraViewerProps) {
           className="bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition"
         >
           Capture Photo
+        </button>
+
+        {/* Switch camera */}
+        <button
+          onClick={switchCamera}
+          disabled={!deviceId}
+          className="bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+        >
+          Switch Camera
         </button>
       </div>
     </div>

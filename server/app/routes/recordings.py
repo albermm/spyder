@@ -4,12 +4,13 @@ from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import crud
 from app.db.database import get_db
 from app.models.recording import RecordingListResponse, RecordingResponse, RecordingType, TriggerType
+from app.services.storage import storage_service
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -97,7 +98,7 @@ async def download_recording(
     recording_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Download recording file."""
+    """Download recording file - returns presigned URL for R2 storage."""
     recording = await crud.get_recording(db, recording_id)
     if not recording:
         raise HTTPException(
@@ -105,12 +106,23 @@ async def download_recording(
             detail={"code": "RECORDING_NOT_FOUND", "message": "Recording not found"},
         )
 
-    # For now, return a placeholder response
-    # In production, this would serve the actual file from storage
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail={"code": "NOT_IMPLEMENTED", "message": "File storage not yet implemented"},
-    )
+    # Check if recording has a storage key
+    if not recording.storage_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "FILE_NOT_STORED", "message": "Recording file not stored in cloud"},
+        )
+
+    # Generate presigned URL
+    presigned_url = await storage_service.get_download_url(recording.storage_key)
+    if not presigned_url:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "URL_GENERATION_FAILED", "message": "Failed to generate download URL"},
+        )
+
+    # Redirect to the presigned URL
+    return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @router.delete("/{recording_id}", response_model=dict)
@@ -125,6 +137,14 @@ async def delete_recording(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "RECORDING_NOT_FOUND", "message": "Recording not found"},
         )
+
+    # Delete from R2 storage if file exists
+    if recording.storage_key:
+        try:
+            await storage_service.delete_file(recording.storage_key)
+            logger.info(f"Deleted file from R2: {recording.storage_key}")
+        except Exception as e:
+            logger.error(f"Failed to delete from R2: {e}")
 
     await crud.delete_recording(db, recording_id)
     logger.info(f"Recording deleted: {recording_id}")

@@ -12,6 +12,7 @@ class CommandAction(str, Enum):
 
     START_CAMERA = "start_camera"
     STOP_CAMERA = "stop_camera"
+    SWITCH_CAMERA = "switch_camera"
     START_AUDIO = "start_audio"
     STOP_AUDIO = "stop_audio"
     CAPTURE_PHOTO = "capture_photo"

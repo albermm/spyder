@@ -33,16 +33,26 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>RemoteEye needs location access to share device location with the controller.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>RemoteEye needs location access to share device location with the controller.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>RemoteEye needs camera access to stream video to the controller.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>RemoteEye needs location access to share device location with the controller.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>RemoteEye needs location access to share device location with the controller.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>RemoteEye needs microphone access to stream audio and detect sounds.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>fetch</string>
+		<string>processing</string>
+		<string>location</string>
+		<string>remote-notification</string>
+		<string>bluetooth-central</string>
+		<string>nearby-interaction</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

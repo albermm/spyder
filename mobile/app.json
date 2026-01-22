@@ -1,4 +1,7 @@
 {
   "name": "RemoteEyeMobile",
-  "displayName": "RemoteEyeMobile"
+  "displayName": "RemoteEyeMobile",
+  "plugins": [
+    "expo-asset"
+  ]
 }

@@ -1,7 +1,7 @@
 """Application configuration using Pydantic Settings."""
 
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -60,6 +60,33 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
+
+    # Cloudflare R2 Storage
+    r2_endpoint: Optional[str] = Field(
+        default=None,
+        alias="CLOUDFLARE_R2_ENDPOINT",
+        description="Cloudflare R2 endpoint URL",
+    )
+    r2_access_key_id: Optional[str] = Field(
+        default=None,
+        alias="CLOUDFLARE_R2_ACCESS_KEY_ID",
+        description="Cloudflare R2 access key ID",
+    )
+    r2_secret_access_key: Optional[str] = Field(
+        default=None,
+        alias="CLOUDFLARE_R2_SECRET_ACCESS_KEY",
+        description="Cloudflare R2 secret access key",
+    )
+    r2_bucket_name: str = Field(
+        default="spyder-media",
+        alias="CLOUDFLARE_R2_BUCKET_NAME",
+        description="Cloudflare R2 bucket name",
+    )
+
+    @property
+    def r2_configured(self) -> bool:
+        """Check if R2 storage is configured."""
+        return all([self.r2_endpoint, self.r2_access_key_id, self.r2_secret_access_key])
 
 
 @lru_cache

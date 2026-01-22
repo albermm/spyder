@@ -4,7 +4,7 @@
 
 export { socketService } from './SocketService';
 export { authService } from './AuthService';
-export { cameraService, useBackCamera, useFrontCamera } from './CameraService';
+export { cameraService } from './CameraService';
 export { audioService } from './AudioService';
 export { locationService } from './LocationService';
 export { statusService } from './StatusService';

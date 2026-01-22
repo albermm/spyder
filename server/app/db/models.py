@@ -107,6 +107,7 @@ class Recording(Base):
     device_id = Column(String(36), ForeignKey("devices.id"), nullable=False)
     type = Column(Enum(RecordingTypeEnum), nullable=False)
     filename = Column(String(255), nullable=False)
+    storage_key = Column(String(512), nullable=True)  # R2/S3 storage key
     duration = Column(Integer, nullable=True)  # seconds for audio
     size = Column(Integer, nullable=False)  # bytes
     triggered_by = Column(String(50), nullable=False)  # 'manual', 'sound_detection'

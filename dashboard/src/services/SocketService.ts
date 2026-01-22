@@ -13,6 +13,7 @@ import type {
   CommandAction,
   CommandAck,
   Photo,
+  AudioChunk,
 } from '../types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -123,6 +124,12 @@ class SocketService {
       this.emit('photo', { deviceId: data.deviceId, photo: data.photo });
     });
 
+    this.socket.on('device:audio', (data: { deviceId: string; audio: AudioChunk }) => {
+      if (data.deviceId === this.selectedDeviceId) {
+        this.emit('audio', data.audio);
+      }
+    });
+
     this.socket.on('device:command_ack', (data: CommandAck) => {
       this.emit('commandAck', data);
     });
@@ -212,6 +219,10 @@ class SocketService {
 
   stopCamera(): string {
     return this.sendCommand('stop_camera');
+  }
+
+  switchCamera(position?: 'front' | 'back'): string {
+    return this.sendCommand('switch_camera', position ? { position } : undefined);
   }
 
   capturePhoto(): string {

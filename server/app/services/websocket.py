@@ -14,6 +14,7 @@ from app.models.command import CommandAction
 from app.services.auth import AuthService
 from app.services.device_manager import device_manager
 from app.services.command_queue import CommandQueue
+from app.services.storage import storage_service
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -197,19 +198,48 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
         if not device_id:
             return
 
+        base64_data = photo_data.get("data", "")
+        filename = photo_data.get("filename", f"photo_{datetime.utcnow().timestamp()}.jpg")
+        storage_key = None
+        size = len(base64_data)
+
+        # Upload to R2 storage
+        try:
+            if base64_data and storage_service.is_configured:
+                result = await storage_service.upload_photo(
+                    data=base64_data,
+                    device_id=device_id,
+                    filename=filename,
+                )
+                storage_key = result.get("key")
+                size = result.get("size", size)
+                logger.info(f"Photo uploaded to R2: {storage_key}")
+        except Exception as e:
+            logger.error(f"Failed to upload photo to R2: {e}")
+
         # Store recording in database
         async with AsyncSessionLocal() as db:
-            await crud.create_recording(
+            recording = await crud.create_recording(
                 db=db,
                 device_id=device_id,
                 recording_type="photo",
-                filename=photo_data.get("filename", f"photo_{datetime.utcnow().timestamp()}.jpg"),
-                size=len(photo_data.get("data", "")),
+                filename=filename,
+                size=size,
+                storage_key=storage_key,
                 triggered_by="manual",
             )
             await db.commit()
 
-        # Forward to controllers
+            # Update data with recording ID and storage info for controllers
+            data["recordingId"] = recording.id
+            data["storageKey"] = storage_key
+
+        # Forward to controllers (without base64 data if stored in R2)
+        if storage_key:
+            # Remove raw data from forwarded message - controllers can fetch via API
+            data["photo"]["stored"] = True
+            del data["photo"]["data"]
+
         await sio.emit(
             "device:photo",
             data,

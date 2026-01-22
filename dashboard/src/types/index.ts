@@ -102,6 +102,15 @@ export interface Photo {
   timestamp: string;
 }
 
+// Audio chunk for live streaming
+export interface AudioChunk {
+  data: string; // base64 encoded PCM audio
+  sampleRate: number;
+  channels: number;
+  duration: number;
+  sequence: number;
+}
+
 // Connection state
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 

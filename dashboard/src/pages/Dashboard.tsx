@@ -8,6 +8,7 @@ import { socketService } from '../services/SocketService';
 import { DeviceCard } from '../components/DeviceCard';
 import { CameraViewer } from '../components/CameraViewer';
 import { LocationMap } from '../components/LocationMap';
+import { AudioPlayer } from '../components/AudioPlayer';
 import type { Device, ConnectionState, DeviceStatus } from '../types';
 
 export function Dashboard() {
@@ -164,33 +165,29 @@ export function Dashboard() {
               </div>
 
               {/* Audio Controls */}
-              <div className="bg-slate-800 rounded-xl p-4">
-                <h3 className="text-lg font-semibold text-white mb-4">Audio Controls</h3>
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={() => socketService.startAudio()}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-                  >
-                    Start Audio
-                  </button>
-                  <button
-                    onClick={() => socketService.stopAudio()}
-                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-                  >
-                    Stop Audio
-                  </button>
-                  <button
-                    onClick={() => socketService.enableSoundDetection()}
-                    className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-                  >
-                    Enable Sound Detection
-                  </button>
-                  <button
-                    onClick={() => socketService.disableSoundDetection()}
-                    className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-                  >
-                    Disable Sound Detection
-                  </button>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <AudioPlayer deviceId={selectedDevice.id} />
+
+                {/* Sound Detection Controls */}
+                <div className="bg-slate-800 rounded-xl p-4">
+                  <h3 className="text-lg font-semibold text-white mb-4">Sound Detection</h3>
+                  <p className="text-slate-400 text-sm mb-4">
+                    When enabled, the device will automatically start recording when it detects sounds above the threshold.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={() => socketService.enableSoundDetection()}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                    >
+                      Enable Detection
+                    </button>
+                    <button
+                      onClick={() => socketService.disableSoundDetection()}
+                      className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                    >
+                      Disable Detection
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
