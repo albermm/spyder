@@ -80,10 +80,14 @@ export interface RecordingInfo {
   triggeredBy: 'sound_detection' | 'manual';
 }
 
+// Camera position
+export type CameraPosition = 'front' | 'back';
+
 // Command actions
 export type CommandAction =
   | 'start_camera'
   | 'stop_camera'
+  | 'switch_camera'
   | 'start_audio'
   | 'stop_audio'
   | 'capture_photo'

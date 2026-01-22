@@ -1,49 +1,131 @@
 /**
  * RemoteEye Mobile - Audio Service
- * Handles audio recording and sound level detection
+ * Handles audio streaming using react-native-live-audio-stream
+ * Includes support for background recording on iOS.
  */
 
-import AudioRecorderPlayer from 'react-native-audio-recorder-player';
-import { Platform, PermissionsAndroid } from 'react-native';
+import LiveAudioStream from 'react-native-live-audio-stream';
+import { AppState, Platform, PermissionsAndroid } from 'react-native';
+import RNFS from 'react-native-fs';
 import { CONFIG } from '../config';
 import { socketService } from './SocketService';
-import type { SoundDetectionSettings, AudioChunk, SoundDetection, RecordingInfo } from '../types';
+import type { SoundDetectionSettings, RecordingInfo } from '../types';
+import { NativeModules } from 'react-native';
+
+// Audio configuration
+const SAMPLE_RATE = 44100;
+const CHANNELS = 1;
+const BITS_PER_SAMPLE = 16;
+const BUFFER_SIZE = 4096;
 
 class AudioService {
-  private audioRecorderPlayer: AudioRecorderPlayer;
-  private isRecording: boolean = false;
+  private isStreaming: boolean = false;
   private isMonitoring: boolean = false;
   private soundDetectionSettings: SoundDetectionSettings = {
     enabled: true,
     threshold: CONFIG.SOUND_THRESHOLD_DEFAULT,
     recordDuration: CONFIG.SOUND_RECORD_DURATION_DEFAULT,
   };
-  private recordingPath: string = '';
   private recordingStartTime: number = 0;
   private monitoringInterval: NodeJS.Timeout | null = null;
-  private autoRecordTimeout: NodeJS.Timeout | null = null;
   private currentRecordingId: string | null = null;
+  
+  // Background task properties
+  private appStateSubscription: any;
+  private backgroundTaskID: any = null;
 
   constructor() {
-    this.audioRecorderPlayer = new AudioRecorderPlayer();
+    this.initializeLiveAudioStream();
+    this.setupAppStateHandling(); // CRITICAL: Set up background handling
+  }
+
+  /**
+   * Listens for app state changes (background/active) to manage background tasks.
+   */
+  private setupAppStateHandling() {
+    this.appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'background' && this.isStreaming) {
+        console.log('[Audio] App entered background, starting background task.');
+        // Start a background task to keep recording going
+        if (Platform.OS === 'ios' && NativeModules.BackgroundTaskManager) {
+          this.backgroundTaskID = NativeModules.BackgroundTaskManager.startBackgroundTask();
+        }
+      } else if (nextAppState === 'active') {
+        console.log('[Audio] App became active.');
+        // End the background task when app comes back to foreground
+        if (Platform.OS === 'ios' && this.backgroundTaskID && NativeModules.BackgroundTaskManager) {
+          console.log('[Audio] Ending background task.');
+          NativeModules.BackgroundTaskManager.endBackgroundTask(this.backgroundTaskID);
+          this.backgroundTaskID = null;
+        }
+      }
+    });
+  }
+
+  private initializeLiveAudioStream(): void {
+    // CRITICAL: Configure the audio session for background recording on iOS
+    if (Platform.OS === 'ios' && NativeModules.AudioSessionManager) {
+      NativeModules.AudioSessionManager.setCategory('playAndRecord', {
+        mixWithOthers: false,
+        allowBluetooth: true,
+        allowAirPlay: true,
+        duckOthers: true,
+      });
+    }
+
+    const baseDir = Platform.OS === 'ios'
+      ? RNFS.DocumentDirectoryPath
+      : RNFS.CachesDirectoryPath;
+
+    LiveAudioStream.init({
+      sampleRate: SAMPLE_RATE,
+      channels: CHANNELS,
+      bitsPerSample: BITS_PER_SAMPLE,
+      audioSource: 6, // VOICE_RECOGNITION for better quality
+      bufferSize: BUFFER_SIZE,
+      wavFile: `${baseDir}/live_audio.wav`, // Required by library
+    });
+
+    LiveAudioStream.on('data', (data: string) => {
+      if (this.isStreaming) {
+        // data is base64 encoded PCM audio
+        // Calculate approximate duration based on buffer size and sample rate
+        const duration = BUFFER_SIZE / (SAMPLE_RATE * CHANNELS * (BITS_PER_SAMPLE / 8));
+
+        socketService.sendAudioChunk({
+          data: data,
+          sampleRate: SAMPLE_RATE,
+          channels: CHANNELS,
+          duration: duration,
+        });
+      }
+    });
+
+    console.log('[Audio] LiveAudioStream initialized');
   }
 
   // Permission handling
   async requestPermissions(): Promise<boolean> {
-    if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        {
-          title: 'Microphone Permission',
-          message: 'RemoteEye needs access to your microphone for audio monitoring.',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
-        }
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    try {
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone Permission',
+            message: 'RemoteEye needs microphone access for audio streaming',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      }
+      // iOS permissions are handled in Info.plist
+      return true;
+    } catch (error) {
+      console.error('[Audio] Permission request failed:', error);
+      return false;
     }
-    return true; // iOS handles permissions via Info.plist
   }
 
   // Settings
@@ -55,82 +137,84 @@ class AudioService {
     return { ...this.soundDetectionSettings };
   }
 
-  // Recording control
-  async startRecording(triggeredBy: 'sound_detection' | 'manual' = 'manual'): Promise<void> {
-    if (this.isRecording) {
-      console.log('[Audio] Already recording');
+  // Audio streaming
+  async startAudioStreaming(): Promise<void> {
+    if (this.isStreaming) {
+      console.log('[Audio] Already streaming');
       return;
+    }
+
+    const hasPermission = await this.requestPermissions();
+    if (!hasPermission) {
+      throw new Error('Microphone permission not granted');
     }
 
     try {
       this.currentRecordingId = this.generateRecordingId();
-      this.recordingPath = `${Platform.OS === 'android' ? '' : 'file://'}recording_${this.currentRecordingId}.m4a`;
       this.recordingStartTime = Date.now();
-      this.isRecording = true;
+
+      console.log(`[Audio] Starting audio streaming: ${this.currentRecordingId}`);
 
       socketService.resetAudioSequence();
+      LiveAudioStream.start();
+      this.isStreaming = true;
 
-      await this.audioRecorderPlayer.startRecorder(this.recordingPath);
-
-      // Set up metering for audio chunks
-      this.audioRecorderPlayer.addRecordBackListener((e) => {
-        if (this.isRecording) {
-          this.handleRecordingProgress(e);
-        }
-      });
-
-      console.log(`[Audio] Recording started: ${this.currentRecordingId}`);
-
-      // If triggered by sound detection, auto-stop after configured duration
-      if (triggeredBy === 'sound_detection') {
-        this.autoRecordTimeout = setTimeout(() => {
-          this.stopRecording('sound_detection');
-        }, this.soundDetectionSettings.recordDuration * 1000);
-      }
+      console.log('[Audio] Audio streaming started');
     } catch (error) {
-      this.isRecording = false;
-      console.error('[Audio] Failed to start recording:', error);
-      throw error;
+      this.isStreaming = false;
+      this.currentRecordingId = null;
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('[Audio] Failed to start audio streaming:', errorMsg);
+      throw new Error(`Audio streaming failed: ${errorMsg}`);
     }
   }
 
-  async stopRecording(triggeredBy: 'sound_detection' | 'manual' = 'manual'): Promise<void> {
-    if (!this.isRecording) return;
+  async stopAudioStreaming(): Promise<void> {
+    if (!this.isStreaming) {
+      console.log('[Audio] Not streaming');
+      return;
+    }
 
     try {
-      if (this.autoRecordTimeout) {
-        clearTimeout(this.autoRecordTimeout);
-        this.autoRecordTimeout = null;
-      }
-
-      const result = await this.audioRecorderPlayer.stopRecorder();
-      this.audioRecorderPlayer.removeRecordBackListener();
+      await LiveAudioStream.stop();
 
       const duration = Math.floor((Date.now() - this.recordingStartTime) / 1000);
 
-      // Notify server that recording is complete
+      console.log(`[Audio] Audio streaming stopped. Duration: ${duration}s`);
+
       if (this.currentRecordingId) {
         const recordingInfo: RecordingInfo = {
           id: this.currentRecordingId,
           type: 'audio',
           duration,
-          size: 0, // Would need to get file size
-          triggeredBy,
+          size: 0,
+          triggeredBy: 'manual',
         };
         socketService.sendRecordingComplete(recordingInfo);
       }
-
-      console.log(`[Audio] Recording stopped: ${result}`);
     } catch (error) {
-      console.error('[Audio] Failed to stop recording:', error);
+      console.error('[Audio] Failed to stop audio streaming:', error);
     } finally {
-      this.isRecording = false;
+      this.isStreaming = false;
       this.currentRecordingId = null;
     }
   }
 
+  // Recording control (aliases for streaming)
+  async startRecording(triggeredBy: 'sound_detection' | 'manual' = 'manual'): Promise<void> {
+    await this.startAudioStreaming();
+  }
+
+  async stopRecording(triggeredBy: 'sound_detection' | 'manual' = 'manual'): Promise<void> {
+    await this.stopAudioStreaming();
+  }
+
   isCurrentlyRecording(): boolean {
-    return this.isRecording;
+    return this.isStreaming;
+  }
+
+  isCurrentlyStreaming(): boolean {
+    return this.isStreaming;
   }
 
   // Sound level monitoring
@@ -140,12 +224,9 @@ class AudioService {
     this.isMonitoring = true;
     console.log('[Audio] Sound monitoring started');
 
-    // Start a silent recording to monitor levels
-    // This is a simplified approach - in production, use a native module
-    // for more efficient audio level monitoring
     this.monitoringInterval = setInterval(() => {
       this.checkSoundLevel();
-    }, 100); // Check every 100ms
+    }, 100);
   }
 
   stopMonitoring(): void {
@@ -167,68 +248,39 @@ class AudioService {
 
   private async checkSoundLevel(): Promise<void> {
     if (!this.soundDetectionSettings.enabled) return;
-
-    // In a real implementation, get the actual audio level
-    // This would typically use a native module or the recorder's metering
-    const currentLevel = await this.getCurrentAudioLevel();
-
-    if (currentLevel >= this.soundDetectionSettings.threshold) {
-      const detection: SoundDetection = {
-        level: currentLevel,
-        threshold: this.soundDetectionSettings.threshold,
-        recordingStarted: false,
-      };
-
-      // Start recording if not already recording
-      if (!this.isRecording) {
-        detection.recordingStarted = true;
-        this.startRecording('sound_detection');
-      }
-
-      socketService.sendSoundDetected(detection);
-    }
-  }
-
-  private async getCurrentAudioLevel(): Promise<number> {
-    // Placeholder - in production, implement actual audio level metering
-    // This would use the audio recorder's metering callback or native module
-    // Return value in dB (typically -160 to 0)
-    return -60; // Placeholder value
-  }
-
-  private handleRecordingProgress(data: { currentPosition: number; currentMetering?: number }): void {
-    // Send audio chunk data if needed for real-time streaming
-    // Note: For MJPEG-style audio, we'd send chunks periodically
-    // This is a simplified implementation
-
-    if (data.currentMetering !== undefined) {
-      // Metering data available
-    }
-  }
-
-  // Audio streaming (for live audio to dashboard)
-  async startAudioStreaming(): Promise<void> {
-    if (this.isRecording) {
-      console.log('[Audio] Cannot stream while recording');
-      return;
-    }
-
-    // Start recording to capture audio for streaming
-    await this.startRecording('manual');
-  }
-
-  stopAudioStreaming(): void {
-    this.stopRecording('manual');
+    // Sound level monitoring would need a separate implementation
+    // For now, this is a placeholder
   }
 
   private generateRecordingId(): string {
     return `rec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  // Cleanup
-  destroy(): void {
+  /**
+   * Cleans up all resources, including background tasks and listeners.
+   * CRITICAL: Must be called to prevent memory leaks and background task issues.
+   */
+  async destroy(): Promise<void> {
+    console.log('[Audio] Destroying service...');
     this.stopMonitoring();
-    this.stopRecording();
+    if (this.isStreaming) {
+      await this.stopAudioStreaming();
+    }
+    
+    // Clean up app state subscription
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
+    }
+    
+    // Clean up background task if still active
+    if (this.backgroundTaskID && Platform.OS === 'ios' && NativeModules.BackgroundTaskManager) {
+      console.log('[Audio] Ending background task on destroy.');
+      NativeModules.BackgroundTaskManager.endBackgroundTask(this.backgroundTaskID);
+      this.backgroundTaskID = null;
+    }
+    
+    console.log('[Audio] Service destroyed.');
   }
 }
 

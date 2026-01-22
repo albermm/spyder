@@ -8,7 +8,7 @@ import RNFS from 'react-native-fs';
 import ImageResizer from 'react-native-image-resizer';
 import { CONFIG } from '../config';
 import { socketService } from './SocketService';
-import type { CameraSettings, CameraFrame } from '../types';
+import type { CameraSettings, CameraFrame, CameraPosition } from '../types';
 
 interface FrameCallback {
   (frame: CameraFrame): void;
@@ -16,9 +16,11 @@ interface FrameCallback {
 
 // Event emitter for camera state changes
 type StateCallback = (isActive: boolean) => void;
+type PositionCallback = (position: CameraPosition) => void;
 
 class CameraService {
   private _isStreaming: boolean = false;
+  private _cameraPosition: CameraPosition = 'back';
   private settings: CameraSettings = {
     quality: CONFIG.CAMERA_DEFAULT_QUALITY,
     fps: CONFIG.CAMERA_DEFAULT_FPS,
@@ -27,6 +29,7 @@ class CameraService {
   private captureCallback: FrameCallback | null = null;
   private cameraRef: Camera | null = null;
   private stateCallbacks: Set<StateCallback> = new Set();
+  private positionCallbacks: Set<PositionCallback> = new Set();
   private captureInProgress: boolean = false;
 
   // Permission handling
@@ -70,6 +73,36 @@ class CameraService {
 
   private notifyStateChange(): void {
     this.stateCallbacks.forEach(cb => cb(this._isStreaming));
+  }
+
+  // Camera position
+  getCameraPosition(): CameraPosition {
+    return this._cameraPosition;
+  }
+
+  setCameraPosition(position: CameraPosition): void {
+    if (this._cameraPosition !== position) {
+      this._cameraPosition = position;
+      console.log(`[Camera] Position changed to: ${position}`);
+      this.notifyPositionChange();
+    }
+  }
+
+  switchCamera(): void {
+    const newPosition = this._cameraPosition === 'back' ? 'front' : 'back';
+    this.setCameraPosition(newPosition);
+  }
+
+  onPositionChange(callback: PositionCallback): void {
+    this.positionCallbacks.add(callback);
+  }
+
+  offPositionChange(callback: PositionCallback): void {
+    this.positionCallbacks.delete(callback);
+  }
+
+  private notifyPositionChange(): void {
+    this.positionCallbacks.forEach(cb => cb(this._cameraPosition));
   }
 
   // Streaming control

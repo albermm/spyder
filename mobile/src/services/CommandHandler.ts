@@ -19,6 +19,7 @@ class CommandHandlerService {
     this.handlers = new Map([
       ['start_camera', this.handleStartCamera.bind(this)],
       ['stop_camera', this.handleStopCamera.bind(this)],
+      ['switch_camera', this.handleSwitchCamera.bind(this)],
       ['start_audio', this.handleStartAudio.bind(this)],
       ['stop_audio', this.handleStopAudio.bind(this)],
       ['capture_photo', this.handleCapturePhoto.bind(this)],
@@ -79,6 +80,16 @@ class CommandHandlerService {
     cameraService.stopStreaming();
   }
 
+  private async handleSwitchCamera(params?: Record<string, unknown>): Promise<void> {
+    // If a specific position is provided, set it; otherwise toggle
+    if (params?.position === 'front' || params?.position === 'back') {
+      cameraService.setCameraPosition(params.position);
+    } else {
+      cameraService.switchCamera();
+    }
+    console.log(`[CommandHandler] Camera switched to: ${cameraService.getCameraPosition()}`);
+  }
+
   private async handleCapturePhoto(): Promise<void> {
     const photo = await cameraService.capturePhoto();
     socketService.sendPhoto({
@@ -91,6 +102,14 @@ class CommandHandlerService {
 
   // Audio commands
   private async handleStartAudio(): Promise<void> {
+    // Stop camera first - iOS may have audio session conflicts
+    if (cameraService.isCurrentlyStreaming()) {
+      console.log('[CommandHandler] Stopping camera before starting audio');
+      cameraService.stopStreaming();
+      // Give iOS time to release the audio session
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    console.log('[CommandHandler] Starting audio streaming...');
     await audioService.startAudioStreaming();
   }
 

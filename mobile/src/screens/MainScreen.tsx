@@ -22,7 +22,7 @@ import {
   statusService,
   commandHandler,
 } from '../services';
-import type { ConnectionState, DeviceStatus } from '../types';
+import type { ConnectionState, DeviceStatus, CameraPosition } from '../types';
 
 interface MainScreenProps {
   onLogout: () => void;
@@ -37,8 +37,9 @@ export const MainScreen: React.FC<MainScreenProps> = ({ onLogout }) => {
     location: false,
   });
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraPosition, setCameraPosition] = useState<CameraPosition>('back');
 
-  const device = useCameraDevice('back');
+  const device = useCameraDevice(cameraPosition);
   const cameraRef = useRef<Camera>(null);
 
   useEffect(() => {
@@ -62,6 +63,17 @@ export const MainScreen: React.FC<MainScreenProps> = ({ onLogout }) => {
 
     cameraService.onStateChange(handleCameraStateChange);
     return () => cameraService.offStateChange(handleCameraStateChange);
+  }, []);
+
+  // Listen for camera position changes
+  useEffect(() => {
+    const handlePositionChange = (position: CameraPosition) => {
+      console.log('[MainScreen] Camera position changed:', position);
+      setCameraPosition(position);
+    };
+
+    cameraService.onPositionChange(handlePositionChange);
+    return () => cameraService.offPositionChange(handlePositionChange);
   }, []);
 
   // Track active features for display
