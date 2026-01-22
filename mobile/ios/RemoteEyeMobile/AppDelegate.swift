@@ -19,7 +19,7 @@ import UserNotifications
 // 4. Set isSetupMode = false, rebuild and reinstall
 // 5. App now runs headlessly with stored credentials
 // =============================================================================
-private let isSetupMode = false
+private let isSetupMode = true
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {

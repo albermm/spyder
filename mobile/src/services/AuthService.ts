@@ -87,8 +87,8 @@ class AuthService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.refreshToken}`,
         },
+        body: JSON.stringify({ refresh_token: this.refreshToken }),
       });
 
       if (!response.ok) {
