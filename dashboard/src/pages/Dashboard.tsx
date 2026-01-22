@@ -9,6 +9,7 @@ import { DeviceCard } from '../components/DeviceCard';
 import { CameraViewer } from '../components/CameraViewer';
 import { LocationMap } from '../components/LocationMap';
 import { AudioPlayer } from '../components/AudioPlayer';
+import { RecordingsList } from '../components/RecordingsList';
 import type { Device, ConnectionState, DeviceStatus } from '../types';
 
 export function Dashboard() {
@@ -259,6 +260,9 @@ export function Dashboard() {
                   </div>
                 </div>
               </div>
+
+              {/* Recordings History */}
+              <RecordingsList deviceId={selectedDevice.id} />
             </div>
           ) : (
             <div className="flex items-center justify-center h-96 text-slate-500">

@@ -81,15 +81,26 @@ export interface CommandAck {
   error?: string;
 }
 
+// Recording status
+export type RecordingStatus = 'completed' | 'upload_failed';
+
 // Recording info
 export interface Recording {
   id: string;
   deviceId: string;
   type: 'audio' | 'photo';
+  filename: string;
   duration?: number;
   size: number;
   createdAt: string;
   triggeredBy: 'sound_detection' | 'manual';
+  storageKey?: string | null;
+  status?: RecordingStatus;
+  metadata?: {
+    status?: string;
+    error?: string;
+    dimensions?: { width: number; height: number };
+  };
 }
 
 // Photo data

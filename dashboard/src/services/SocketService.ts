@@ -141,6 +141,11 @@ class SocketService {
     this.socket.on('device:recording_complete', (data) => {
       this.emit('recordingComplete', data);
     });
+
+    this.socket.on('device:upload_failed', (data) => {
+      console.warn('[Socket] Upload failed:', data);
+      this.emit('uploadFailed', data);
+    });
   }
 
   private setConnectionState(state: ConnectionState): void {

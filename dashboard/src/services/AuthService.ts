@@ -3,7 +3,27 @@
  */
 
 import { CONFIG, getServerUrl } from '../config';
-import type { AuthResponse, Device } from '../types';
+import type { AuthResponse, Device, Recording } from '../types';
+
+// API response types
+interface RecordingsListResponse {
+  recordings: Array<{
+    id: string;
+    device_id: string;
+    type: 'audio' | 'photo';
+    filename: string;
+    duration?: number;
+    size: number;
+    triggered_by: string;
+    created_at: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
+}
 
 class AuthService {
   private token: string | null = null;
@@ -112,6 +132,68 @@ class AuthService {
 
     const data = await response.json();
     return data.devices || [];
+  }
+
+  async getRecordings(deviceId: string, options?: {
+    type?: 'audio' | 'photo';
+    limit?: number;
+    offset?: number;
+  }): Promise<{ recordings: Recording[]; total: number }> {
+    const serverUrl = getServerUrl();
+    const params = new URLSearchParams({
+      device_id: deviceId,
+      limit: String(options?.limit ?? 20),
+      offset: String(options?.offset ?? 0),
+    });
+
+    if (options?.type) {
+      params.set('type', options.type);
+    }
+
+    const response = await fetch(`${serverUrl}/api/recordings?${params}`, {
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch recordings');
+    }
+
+    const data: RecordingsListResponse = await response.json();
+
+    // Transform API response to frontend Recording type
+    const recordings: Recording[] = data.recordings.map((r) => {
+      const metadata = r.metadata as Record<string, unknown> | undefined;
+      const isUploadFailed = metadata?.status === 'upload_failed';
+
+      return {
+        id: r.id,
+        deviceId: r.device_id,
+        type: r.type,
+        filename: r.filename,
+        duration: r.duration,
+        size: r.size,
+        triggeredBy: r.triggered_by as 'sound_detection' | 'manual',
+        createdAt: r.created_at,
+        status: isUploadFailed ? 'upload_failed' : 'completed',
+        metadata: metadata ? {
+          status: metadata.status as string | undefined,
+          error: metadata.error as string | undefined,
+          dimensions: metadata.dimensions as { width: number; height: number } | undefined,
+        } : undefined,
+      };
+    });
+
+    return {
+      recordings,
+      total: data.pagination.total,
+    };
+  }
+
+  getDownloadUrl(recordingId: string): string {
+    const serverUrl = getServerUrl();
+    return `${serverUrl}/api/recordings/${recordingId}/download`;
   }
 
   private storeCredentials(controllerId: string, token: string, refreshToken: string): void {
