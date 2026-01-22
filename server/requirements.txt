@@ -1,24 +1,21 @@
-# Core dependencies
-fastapi>=0.109.0
-uvicorn[standard]>=0.27.0
-python-socketio>=5.11.0
-pydantic>=2.5.0
-pydantic-settings>=2.1.0
-sqlalchemy[asyncio]>=2.0.0
-aiosqlite>=0.19.0
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-python-multipart>=0.0.6
-aiofiles>=23.2.0
-slowapi>=0.1.9
-boto3>=1.34.0
-aioboto3>=12.0.0
+# Core dependencies - pinned for reliable deployment
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-socketio==5.11.4
+pydantic==2.9.2
+pydantic-settings==2.5.2
+sqlalchemy[asyncio]==2.0.35
+aiosqlite==0.20.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.12
+aiofiles==24.1.0
+slowapi==0.1.9
+boto3==1.35.36
+aioboto3==13.2.0
+firebase-admin==6.5.0
 
-# Development dependencies
-pytest>=7.4.0
-pytest-asyncio>=0.23.0
-pytest-cov>=4.1.0
-httpx>=0.26.0
-black>=24.1.0
-ruff>=0.1.0
-firebase-admin
+# Testing (optional for production)
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.27.2
