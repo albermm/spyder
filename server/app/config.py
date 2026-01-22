@@ -88,6 +88,18 @@ class Settings(BaseSettings):
         """Check if R2 storage is configured."""
         return all([self.r2_endpoint, self.r2_access_key_id, self.r2_secret_access_key])
 
+    # Firebase Cloud Messaging
+    firebase_service_account_json: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_SERVICE_ACCOUNT_JSON",
+        description="Firebase service account JSON (as string)",
+    )
+
+    @property
+    def fcm_configured(self) -> bool:
+        """Check if FCM is configured."""
+        return self.firebase_service_account_json is not None
+
 
 @lru_cache
 def get_settings() -> Settings:

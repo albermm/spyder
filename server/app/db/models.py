@@ -65,6 +65,8 @@ class Device(Base):
     device_info = Column(JSON, nullable=True)
     current_status = Column(JSON, nullable=True)
     settings = Column(JSON, nullable=False, default=dict)
+    push_token = Column(String(255), nullable=True)  # FCM token for push notifications
+    push_platform = Column(String(20), nullable=True)  # 'ios' or 'android'
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

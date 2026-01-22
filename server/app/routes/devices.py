@@ -18,7 +18,9 @@ from app.models.command import (
 )
 from app.services.command_queue import CommandQueue
 from app.services.device_manager import device_manager
+from app.services.push_notification import push_service
 from app.utils.logger import get_logger
+from pydantic import BaseModel
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -214,3 +216,93 @@ async def get_command_history(
         ],
         pagination={"total": total, "limit": limit, "offset": offset},
     )
+
+
+# ============= Push Notifications =============
+
+
+class PushTokenRequest(BaseModel):
+    """Request model for registering a push token."""
+    token: str
+    platform: str  # 'ios' or 'android'
+
+
+@router.post("/{device_id}/push-token", response_model=dict)
+async def register_push_token(
+    device_id: str,
+    request: PushTokenRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Register a push notification token for the device."""
+    device = await crud.get_device(db, device_id)
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "DEVICE_NOT_FOUND", "message": "Device not found"},
+        )
+
+    # Update push token in database
+    await crud.update_device_push_token(db, device_id, request.token, request.platform)
+    logger.info(f"Push token registered for device {device_id}")
+
+    return {
+        "success": True,
+        "message": "Push token registered successfully",
+    }
+
+
+@router.post("/{device_id}/ping", response_model=dict)
+async def ping_device(
+    device_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """
+    Send a silent push notification to wake up the device.
+
+    This is used to check if the device is alive and trigger
+    it to reconnect to the WebSocket if needed.
+    """
+    device = await crud.get_device(db, device_id)
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "DEVICE_NOT_FOUND", "message": "Device not found"},
+        )
+
+    # Check if device is already online via WebSocket
+    is_online = device_manager.is_device_online(device_id)
+
+    if is_online:
+        return {
+            "success": True,
+            "status": "already_online",
+            "message": "Device is already connected via WebSocket",
+        }
+
+    # Check if device has a push token
+    if not device.push_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "NO_PUSH_TOKEN",
+                "message": "Device has no registered push token",
+            },
+        )
+
+    # Send silent push notification
+    sent = await push_service.send_silent_ping(device.push_token, device_id)
+
+    if sent:
+        return {
+            "success": True,
+            "status": "ping_sent",
+            "message": "Silent push notification sent to device",
+        }
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "code": "PUSH_FAILED",
+                "message": "Failed to send push notification",
+            },
+        )

@@ -98,6 +98,22 @@ async def update_device_settings(
             update(Device).where(Device.id == device_id).values(**update_data)
         )
         await db.flush()
+
+
+async def update_device_push_token(
+    db: AsyncSession,
+    device_id: str,
+    push_token: str,
+    platform: str,
+) -> Optional[Device]:
+    """Update device push notification token."""
+    await db.execute(
+        update(Device)
+        .where(Device.id == device_id)
+        .values(push_token=push_token, push_platform=platform)
+    )
+    await db.commit()
+    return await get_device(db, device_id)
     return await get_device(db, device_id)
 
 

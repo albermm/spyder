@@ -10,3 +10,4 @@ export { locationService } from './LocationService';
 export { statusService } from './StatusService';
 export { commandHandler } from './CommandHandler';
 export { backgroundService, headlessTask } from './BackgroundService';
+export { pushNotificationService } from './PushNotificationService';

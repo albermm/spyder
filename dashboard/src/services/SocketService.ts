@@ -256,6 +256,27 @@ class SocketService {
   setSoundThreshold(threshold: number, duration?: number): string {
     return this.sendCommand('set_sound_threshold', { threshold, duration });
   }
+
+  // Ping device via silent push notification (for waking up offline devices)
+  async pingDevice(deviceId: string): Promise<{ success: boolean; status: string; message: string }> {
+    const serverUrl = getServerUrl();
+    try {
+      const response = await fetch(`${serverUrl}/api/devices/${deviceId}/ping`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('[Socket] Ping failed:', error);
+      return {
+        success: false,
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
 }
 
 export const socketService = new SocketService();

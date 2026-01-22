@@ -71,8 +71,8 @@ class StorageService:
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             filename = f"photo_{timestamp}_{uuid4().hex[:8]}.jpg"
 
-        # Build the storage key
-        key = f"photos/{device_id}/{filename}"
+        # Build the storage key (using spyder-media prefix)
+        key = f"spyder-media/photos/{device_id}/{filename}"
 
         # Decode base64 data
         try:
@@ -130,8 +130,8 @@ class StorageService:
             ext = "wav" if "wav" in content_type else "mp3"
             filename = f"audio_{timestamp}_{uuid4().hex[:8]}.{ext}"
 
-        # Build the storage key
-        key = f"audio/{device_id}/{filename}"
+        # Build the storage key (using spyder-media prefix)
+        key = f"spyder-media/audio/{device_id}/{filename}"
 
         # Upload to R2
         session = self._get_session()

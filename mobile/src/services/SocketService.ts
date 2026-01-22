@@ -190,6 +190,18 @@ class SocketService {
     }
   }
 
+  // Public heartbeat method (for push notification wake-up)
+  sendHeartbeat(): void {
+    if (this.socket?.connected && this.deviceId) {
+      this.socket.emit('device:heartbeat', {
+        type: 'device:heartbeat',
+        timestamp: new Date().toISOString(),
+        deviceId: this.deviceId,
+      });
+      console.log('[Socket] Heartbeat sent');
+    }
+  }
+
   // Send methods
   sendStatus(status: DeviceStatus): void {
     if (!this.socket?.connected || !this.deviceId) return;

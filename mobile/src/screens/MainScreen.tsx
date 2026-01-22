@@ -21,6 +21,7 @@ import {
   locationService,
   statusService,
   commandHandler,
+  pushNotificationService,
 } from '../services';
 import type { ConnectionState, DeviceStatus, CameraPosition } from '../types';
 
@@ -109,6 +110,9 @@ export const MainScreen: React.FC<MainScreenProps> = ({ onLogout }) => {
     // Start status service (reports battery, network, etc.)
     await statusService.start();
 
+    // Initialize push notifications (for silent wake-up)
+    await pushNotificationService.initialize();
+
     // Update local status display
     setDeviceStatus(statusService.getStatus());
   };
@@ -126,6 +130,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({ onLogout }) => {
     statusService.stop();
     cameraService.stopStreaming();
     audioService.destroy();
+    pushNotificationService.destroy();
     locationService.destroy();
   };
 
