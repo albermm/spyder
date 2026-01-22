@@ -288,6 +288,16 @@ class CameraService {
 
     console.log(`[Camera] Capturing photo for direct R2 upload: ${recordingId}`);
 
+    // If camera is not streaming, we need to temporarily activate it
+    const wasStreaming = this._isStreaming;
+    if (!wasStreaming) {
+      console.log('[Camera] Temporarily activating camera for photo capture...');
+      this._isStreaming = true;
+      this.notifyStateChange();
+      // Wait for camera to initialize
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
     try {
       // 1. Capture the photo
       const photo = await this.cameraRef.takePhoto({
@@ -383,6 +393,13 @@ class CameraService {
       });
 
       throw error;
+    } finally {
+      // Deactivate camera if it wasn't streaming before
+      if (!wasStreaming) {
+        console.log('[Camera] Deactivating camera after photo capture');
+        this._isStreaming = false;
+        this.notifyStateChange();
+      }
     }
   }
 
