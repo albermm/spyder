@@ -9,6 +9,7 @@
  */
 
 import { io, Socket } from 'socket.io-client';
+import { AppState, AppStateStatus, NativeModules, Platform } from 'react-native';
 import DeviceInfo from 'react-native-device-info';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG, getServerUrl } from '../config';
@@ -39,6 +40,120 @@ class SocketService {
   private frameSequence: number = 0;
   private audioSequence: number = 0;
   private isRefreshingToken: boolean = false;
+  private appStateSubscription: { remove: () => void } | null = null;
+  private wasConnectedBeforeBackground: boolean = false;
+  private lastAppState: AppStateStatus = 'active';
+  private backgroundTaskId: number | null = null;
+
+  constructor() {
+    this.setupAppStateHandling();
+  }
+
+  /**
+   * Handle app state changes (foreground/background).
+   * Reconnects automatically when app returns to foreground.
+   */
+  private setupAppStateHandling(): void {
+    this.appStateSubscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
+      console.log(`[Socket] App state changed: ${this.lastAppState} -> ${nextAppState}`);
+
+      // App returning to foreground
+      if (
+        (this.lastAppState === 'background' || this.lastAppState === 'inactive') &&
+        nextAppState === 'active'
+      ) {
+        console.log('[Socket] App returned to foreground');
+
+        // End any background task we started
+        await this.endBackgroundTask();
+
+        // Check if we were connected before going to background
+        // or if we should be connected (have credentials)
+        if (this.wasConnectedBeforeBackground || this.deviceId) {
+          // Give iOS a moment to restore network connectivity
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          if (!this.socket?.connected) {
+            console.log('[Socket] Reconnecting after returning to foreground...');
+            await this.reconnect();
+          } else {
+            // Connection survived, just send a heartbeat to confirm
+            this.sendHeartbeat();
+          }
+        }
+      }
+
+      // App going to background
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        console.log('[Socket] App entering background');
+        this.wasConnectedBeforeBackground = this.socket?.connected ?? false;
+
+        // Start a background task to keep connection alive briefly
+        // This gives us time to send any pending data before iOS suspends the app
+        if (this.wasConnectedBeforeBackground) {
+          await this.startBackgroundTask();
+        }
+      }
+
+      this.lastAppState = nextAppState;
+    });
+
+    console.log('[Socket] App state handling initialized');
+  }
+
+  /**
+   * Reconnect to the server using stored credentials.
+   * Called when app returns to foreground.
+   */
+  private async reconnect(): Promise<void> {
+    try {
+      // Use the self-healing connection method
+      await this.connectWithAutoRefresh();
+      console.log('[Socket] Reconnected successfully after foreground transition');
+    } catch (error) {
+      console.error('[Socket] Reconnection failed:', error);
+      this.emit('error', { code: 'RECONNECTION_FAILED', message: String(error) });
+    }
+  }
+
+  /**
+   * Start an iOS background task to keep the connection alive briefly.
+   * iOS gives apps ~30 seconds of background execution time.
+   */
+  private async startBackgroundTask(): Promise<void> {
+    if (Platform.OS !== 'ios' || !NativeModules.BackgroundTaskManager) {
+      return;
+    }
+
+    try {
+      // End any existing background task first
+      await this.endBackgroundTask();
+
+      this.backgroundTaskId = await NativeModules.BackgroundTaskManager.startBackgroundTask();
+      console.log(`[Socket] Started background task: ${this.backgroundTaskId}`);
+    } catch (error) {
+      console.error('[Socket] Failed to start background task:', error);
+    }
+  }
+
+  /**
+   * End the current background task.
+   */
+  private async endBackgroundTask(): Promise<void> {
+    if (Platform.OS !== 'ios' || !NativeModules.BackgroundTaskManager) {
+      return;
+    }
+
+    if (this.backgroundTaskId !== null) {
+      try {
+        NativeModules.BackgroundTaskManager.endBackgroundTask(this.backgroundTaskId);
+        console.log(`[Socket] Ended background task: ${this.backgroundTaskId}`);
+        this.backgroundTaskId = null;
+      } catch (error) {
+        console.error('[Socket] Failed to end background task:', error);
+      }
+    }
+  }
 
   // Event emitter methods
   on(event: string, callback: EventCallback): void {
@@ -358,6 +473,18 @@ class SocketService {
     this.socket?.disconnect();
     this.socket = null;
     this.setConnectionState('disconnected');
+  }
+
+  /**
+   * Destroy the socket service (clean up all resources).
+   */
+  destroy(): void {
+    this.disconnect();
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
+    }
+    this.endBackgroundTask();
   }
 
   // Device registration

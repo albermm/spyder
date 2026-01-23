@@ -24,6 +24,59 @@ interface PresignedUrlResponse {
   key: string; // The file path/key in the R2 bucket
 }
 
+/**
+ * Create a WAV file header for raw PCM audio data.
+ * Returns a base64-encoded header that can be prepended to audio data.
+ */
+function createWavHeader(dataLength: number, sampleRate: number, channels: number, bitsPerSample: number): string {
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+  const headerLength = 44;
+  const fileSize = dataLength + headerLength - 8;
+
+  const buffer = new ArrayBuffer(headerLength);
+  const view = new DataView(buffer);
+
+  // "RIFF" chunk descriptor
+  view.setUint8(0, 0x52); // R
+  view.setUint8(1, 0x49); // I
+  view.setUint8(2, 0x46); // F
+  view.setUint8(3, 0x46); // F
+  view.setUint32(4, fileSize, true); // File size - 8
+  view.setUint8(8, 0x57);  // W
+  view.setUint8(9, 0x41);  // A
+  view.setUint8(10, 0x56); // V
+  view.setUint8(11, 0x45); // E
+
+  // "fmt " sub-chunk
+  view.setUint8(12, 0x66); // f
+  view.setUint8(13, 0x6D); // m
+  view.setUint8(14, 0x74); // t
+  view.setUint8(15, 0x20); // (space)
+  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+  view.setUint16(20, 1, true);  // AudioFormat (1 for PCM)
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+
+  // "data" sub-chunk
+  view.setUint8(36, 0x64); // d
+  view.setUint8(37, 0x61); // a
+  view.setUint8(38, 0x74); // t
+  view.setUint8(39, 0x61); // a
+  view.setUint32(40, dataLength, true);
+
+  // Convert to base64
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 class AudioService {
   private isStreaming: boolean = false;
   private isMonitoring: boolean = false;
@@ -35,7 +88,7 @@ class AudioService {
   private recordingStartTime: number = 0;
   private monitoringInterval: NodeJS.Timeout | null = null;
   private currentRecordingId: string | null = null;
-  
+
   // Background task properties
   private appStateSubscription: any;
   private backgroundTaskID: any = null;
@@ -43,6 +96,10 @@ class AudioService {
   // R2 UPLOAD: Properties for local file and upload status
   private localRecordingPath: string | null = null;
   private isUploading: boolean = false;
+
+  // Audio data accumulator - stores base64 chunks during recording
+  private audioChunks: string[] = [];
+  private totalAudioBytes: number = 0;
 
   constructor() {
     this.initializeLiveAudioStream();
@@ -77,22 +134,22 @@ class AudioService {
       });
     }
 
-    // Generate recording ID ONCE and use it for both the file path and currentRecordingId
-    this.currentRecordingId = this.generateRecordingId();
-    const baseDir = Platform.OS === 'ios' ? RNFS.DocumentDirectoryPath : RNFS.CachesDirectoryPath;
-    this.localRecordingPath = `${baseDir}/${this.currentRecordingId}.wav`;
-
+    // Initialize the audio stream (note: wavFile option is NOT supported on iOS)
     LiveAudioStream.init({
       sampleRate: SAMPLE_RATE,
       channels: CHANNELS,
       bitsPerSample: BITS_PER_SAMPLE,
       audioSource: 6,
       bufferSize: BUFFER_SIZE,
-      wavFile: this.localRecordingPath,
     });
 
     LiveAudioStream.on('data', (data: string) => {
       if (this.isStreaming) {
+        // Accumulate audio chunks for WAV file creation
+        this.audioChunks.push(data);
+        // Calculate byte size from base64 (base64 is ~4/3 the size of raw data)
+        this.totalAudioBytes += Math.floor((data.length * 3) / 4);
+
         const duration = BUFFER_SIZE / (SAMPLE_RATE * CHANNELS * (BITS_PER_SAMPLE / 8));
         socketService.sendAudioChunk({
           data: data,
@@ -134,12 +191,18 @@ class AudioService {
     if (!hasPermission) throw new Error('Microphone permission not granted');
 
     try {
-      // Re-initialize to get a new unique file path for each recording
-      // This also sets this.currentRecordingId and this.localRecordingPath
-      this.initializeLiveAudioStream();
+      // Generate a new recording ID and file path for this recording
+      this.currentRecordingId = this.generateRecordingId();
+      const baseDir = Platform.OS === 'ios' ? RNFS.DocumentDirectoryPath : RNFS.CachesDirectoryPath;
+      this.localRecordingPath = `${baseDir}/${this.currentRecordingId}.wav`;
+
+      // Clear accumulated audio data from any previous recording
+      this.audioChunks = [];
+      this.totalAudioBytes = 0;
 
       this.recordingStartTime = Date.now();
       console.log(`[Audio] Starting audio streaming: ${this.currentRecordingId}`);
+      console.log(`[Audio] Will save to: ${this.localRecordingPath}`);
 
       socketService.resetAudioSequence();
       LiveAudioStream.start();
@@ -152,6 +215,9 @@ class AudioService {
     } catch (error) {
       this.isStreaming = false;
       this.currentRecordingId = null;
+      this.localRecordingPath = null;
+      this.audioChunks = [];
+      this.totalAudioBytes = 0;
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error('[Audio] Failed to start audio streaming:', errorMsg);
       throw new Error(`Audio streaming failed: ${errorMsg}`);
@@ -164,34 +230,85 @@ class AudioService {
     // Capture these before resetting state
     const recordingId = this.currentRecordingId;
     const localPath = this.localRecordingPath;
+    const audioChunks = [...this.audioChunks]; // Copy the chunks
+    const totalBytes = this.totalAudioBytes;
 
     try {
       await LiveAudioStream.stop();
       const duration = Math.floor((Date.now() - this.recordingStartTime) / 1000);
-      console.log(`[Audio] Audio streaming stopped. Duration: ${duration}s`);
+      console.log(`[Audio] Audio streaming stopped. Duration: ${duration}s, Chunks: ${audioChunks.length}, Bytes: ${totalBytes}`);
 
-      // Upload to R2 in background (don't block the stop process)
-      // The upload will notify server on success OR failure
-      if (localPath && recordingId) {
-        console.log(`[Audio] Local recording saved at: ${localPath}`);
-        this.uploadToR2(localPath, recordingId, duration, 'manual').catch(err =>
-          console.error('[Audio] R2 Upload failed in background:', err)
-        );
+      // Save accumulated audio data to WAV file, then upload
+      if (localPath && recordingId && audioChunks.length > 0) {
+        try {
+          await this.saveAudioToWavFile(localPath, audioChunks, totalBytes);
+          console.log(`[Audio] Local recording saved at: ${localPath}`);
+
+          // Upload to R2 in background (don't block the stop process)
+          this.uploadToR2(localPath, recordingId, duration, 'manual').catch(err =>
+            console.error('[Audio] R2 Upload failed in background:', err)
+          );
+        } catch (saveError) {
+          console.error('[Audio] Failed to save WAV file:', saveError);
+          socketService.sendUploadFailed({
+            recordingId: recordingId,
+            mediaType: 'audio',
+            error: `Failed to save WAV file: ${saveError}`,
+            filename: `${recordingId}.wav`,
+          });
+        }
+      } else if (recordingId) {
+        console.warn('[Audio] No audio data to save');
+        socketService.sendUploadFailed({
+          recordingId: recordingId,
+          mediaType: 'audio',
+          error: 'No audio data captured',
+          filename: `${recordingId}.wav`,
+        });
       }
-
-      // NOTE: We no longer send sendRecordingComplete here.
-      // The server is notified via sendAudioUploadComplete after successful R2 upload,
-      // or via sendUploadFailed if the upload fails.
 
     } catch (error) {
       console.error('[Audio] Failed to stop audio streaming:', error);
     } finally {
       this.isStreaming = false;
       this.currentRecordingId = null;
+      this.localRecordingPath = null;
+      this.audioChunks = [];
+      this.totalAudioBytes = 0;
 
       // Report status back to online
       socketService.reportStatus('online');
     }
+  }
+
+  /**
+   * Save accumulated audio chunks to a WAV file.
+   * Creates a proper WAV header and writes all audio data.
+   */
+  private async saveAudioToWavFile(filePath: string, chunks: string[], totalBytes: number): Promise<void> {
+    console.log(`[Audio] Saving ${chunks.length} chunks (${totalBytes} bytes) to WAV file`);
+
+    // Create WAV header
+    const wavHeader = createWavHeader(totalBytes, SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE);
+
+    // Combine all base64 chunks into one
+    // First decode all chunks, combine, then re-encode
+    // This is memory-intensive but necessary for proper WAV file creation
+    const allAudioData = chunks.join('');
+
+    // Write header + audio data
+    // Note: We write the header first, then append the audio data
+    await RNFS.writeFile(filePath, wavHeader, 'base64');
+    await RNFS.appendFile(filePath, allAudioData, 'base64');
+
+    // Verify the file was created
+    const exists = await RNFS.exists(filePath);
+    if (!exists) {
+      throw new Error('WAV file was not created');
+    }
+
+    const stat = await RNFS.stat(filePath);
+    console.log(`[Audio] WAV file created: ${stat.size} bytes`);
   }
 
   /**

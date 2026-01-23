@@ -15,6 +15,7 @@ from app.services.auth import AuthService
 from app.services.device_manager import device_manager
 from app.services.command_queue import CommandQueue
 from app.services.storage import storage_service
+from app.services.push_notification import push_service
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -570,9 +571,24 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
                 )
                 return {"success": True, "commandId": response.id, "status": "delivered"}
         else:
-            # Device offline, command queued
+            # Device offline, command queued - send push notification to wake it up
             async with AsyncSessionLocal() as db:
                 queue_position = await CommandQueue.get_queue_position(db, response.id)
+
+                # Get device's push token and send wake-up notification
+                device = await crud.get_device(db, target_device_id)
+                push_sent = False
+                if device and device.push_token:
+                    logger.info(f"Sending push notification to wake up device {target_device_id}")
+                    push_sent = await push_service.send_silent_ping(
+                        device.push_token, target_device_id
+                    )
+                    if push_sent:
+                        logger.info(f"Push notification sent to device {target_device_id}")
+                    else:
+                        logger.warning(f"Failed to send push notification to device {target_device_id}")
+                else:
+                    logger.warning(f"Device {target_device_id} has no push token registered")
 
             await sio.emit(
                 "server:command_queued",
@@ -582,6 +598,7 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
                     "commandId": response.id,
                     "position": queue_position,
                     "reason": "device_offline",
+                    "pushNotificationSent": push_sent,
                 },
                 to=sid,
             )
@@ -590,6 +607,7 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
                 "commandId": response.id,
                 "status": "queued",
                 "queuePosition": queue_position,
+                "pushNotificationSent": push_sent,
             }
 
         return {"success": True, "commandId": response.id}
