@@ -81,13 +81,78 @@ class CommandHandlerService {
   }
 
   private async handleSwitchCamera(params?: Record<string, unknown>): Promise<void> {
-    // If a specific position is provided, set it; otherwise toggle
+    const previousPosition = cameraService.getCameraPosition();
+    const wasStreaming = cameraService.isCurrentlyStreaming();
+
+    console.log(`[CommandHandler] Switch camera requested. Current: ${previousPosition}, Streaming: ${wasStreaming}`);
+
+    // Determine target position
+    let targetPosition: 'front' | 'back';
     if (params?.position === 'front' || params?.position === 'back') {
-      cameraService.setCameraPosition(params.position);
+      targetPosition = params.position;
     } else {
-      cameraService.switchCamera();
+      targetPosition = previousPosition === 'back' ? 'front' : 'back';
     }
-    console.log(`[CommandHandler] Camera switched to: ${cameraService.getCameraPosition()}`);
+
+    console.log(`[CommandHandler] Switching camera from ${previousPosition} to ${targetPosition}`);
+
+    // If already at target position, nothing to do
+    if (previousPosition === targetPosition) {
+      console.log(`[CommandHandler] Camera already at ${targetPosition}, no switch needed`);
+      return;
+    }
+
+    try {
+      // If streaming, we need to handle the transition carefully
+      if (wasStreaming) {
+        console.log('[CommandHandler] Stopping stream for camera switch...');
+        cameraService.stopStreaming();
+
+        // Wait for camera to fully stop
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+
+      // Switch the camera position
+      cameraService.setCameraPosition(targetPosition);
+
+      // Wait for the new camera device to be ready
+      // This gives React time to re-render with the new device
+      console.log('[CommandHandler] Waiting for camera ref to be ready...');
+      const cameraReady = await cameraService.waitForCameraReady(2000);
+      if (!cameraReady) {
+        console.warn('[CommandHandler] Camera ref not ready after switch, continuing anyway...');
+      }
+
+      // Restart streaming if it was active
+      if (wasStreaming) {
+        console.log('[CommandHandler] Restarting stream with new camera...');
+        await cameraService.startStreaming();
+      }
+
+      const newPosition = cameraService.getCameraPosition();
+      console.log(`[CommandHandler] Camera switch complete. Now using: ${newPosition}`);
+
+      // Verify the switch actually happened
+      if (newPosition !== targetPosition) {
+        throw new Error(`Camera switch failed: expected ${targetPosition}, got ${newPosition}`);
+      }
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[CommandHandler] Camera switch error: ${message}`);
+
+      // Try to restore streaming if it was active
+      if (wasStreaming && !cameraService.isCurrentlyStreaming()) {
+        console.log('[CommandHandler] Attempting to restore streaming after switch failure...');
+        try {
+          await cameraService.startStreaming();
+        } catch (restoreError) {
+          console.error('[CommandHandler] Failed to restore streaming:', restoreError);
+        }
+      }
+
+      throw error;
+    }
   }
 
   private async handleCapturePhoto(): Promise<void> {

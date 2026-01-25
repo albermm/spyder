@@ -196,6 +196,21 @@ class AuthService {
     return `${serverUrl}/api/recordings/${recordingId}/download`;
   }
 
+  async deleteDevice(deviceId: string): Promise<void> {
+    const serverUrl = getServerUrl();
+    const response = await fetch(`${serverUrl}/api/devices/${deviceId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail?.message || 'Failed to delete device');
+    }
+  }
+
   private storeCredentials(controllerId: string, token: string, refreshToken: string): void {
     this.controllerId = controllerId;
     this.token = token;

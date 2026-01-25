@@ -98,7 +98,35 @@ class CameraService {
 
   switchCamera(): void {
     const newPosition = this._cameraPosition === 'back' ? 'front' : 'back';
+    console.log(`[Camera] switchCamera() called, switching to: ${newPosition}`);
     this.setCameraPosition(newPosition);
+  }
+
+  /**
+   * Wait for the camera ref to be set/updated.
+   * Useful after changing camera position to wait for React re-render.
+   */
+  async waitForCameraReady(timeoutMs: number = 2000): Promise<boolean> {
+    const startTime = Date.now();
+    const checkInterval = 100;
+
+    while (Date.now() - startTime < timeoutMs) {
+      if (this.cameraRef) {
+        console.log('[Camera] Camera ref is ready');
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+
+    console.warn('[Camera] Timeout waiting for camera ref');
+    return false;
+  }
+
+  /**
+   * Check if camera ref is currently available.
+   */
+  hasCameraRef(): boolean {
+    return this.cameraRef !== null;
   }
 
   onPositionChange(callback: PositionCallback): void {

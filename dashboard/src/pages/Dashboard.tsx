@@ -73,6 +73,21 @@ export function Dashboard() {
     window.location.reload();
   };
 
+  const handleDeleteDevice = async (deviceId: string) => {
+    try {
+      await authService.deleteDevice(deviceId);
+      // Remove from local state
+      setDevices((prev) => prev.filter((d) => d.id !== deviceId));
+      // Clear selection if deleted device was selected
+      if (selectedDevice?.id === deviceId) {
+        setSelectedDevice(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete device:', error);
+      alert('Failed to delete device: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
   const handlePingDevice = async () => {
     if (!selectedDevice) return;
 
@@ -168,6 +183,7 @@ export function Dashboard() {
                 device={device}
                 isSelected={selectedDevice?.id === device.id}
                 onSelect={() => selectDevice(device)}
+                onDelete={handleDeleteDevice}
               />
             ))}
             {devices.length === 0 && (

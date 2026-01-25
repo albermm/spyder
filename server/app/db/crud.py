@@ -64,14 +64,17 @@ async def update_device_status(
     device_id: str,
     status: DeviceStatusEnum,
     current_status: Optional[dict] = None,
+    device_info: Optional[dict] = None,
 ) -> Optional[Device]:
-    """Update device connection status."""
+    """Update device connection status and optionally device info."""
     update_data = {
         "status": status,
         "last_seen": datetime.utcnow(),
     }
     if current_status:
         update_data["current_status"] = current_status
+    if device_info:
+        update_data["device_info"] = device_info
 
     await db.execute(
         update(Device).where(Device.id == device_id).values(**update_data)

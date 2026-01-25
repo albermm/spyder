@@ -88,15 +88,20 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
         if not device_id:
             return {"success": False, "error": "Missing deviceId"}
 
+        # Get device info if provided
+        device_info = data.get("deviceInfo")
+
         # Register in memory
         device_manager.register_device(device_id, sid)
 
         # Join device room
         await sio.enter_room(sid, f"device:{device_id}")
 
-        # Update database status
+        # Update database status and device info
         async with AsyncSessionLocal() as db:
-            await crud.update_device_status(db, device_id, DeviceStatusEnum.ONLINE)
+            await crud.update_device_status(
+                db, device_id, DeviceStatusEnum.ONLINE, device_info=device_info
+            )
             await db.commit()
 
             # Deliver any queued commands
