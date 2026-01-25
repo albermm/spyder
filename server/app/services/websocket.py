@@ -90,6 +90,7 @@ def setup_socketio_handlers(sio: socketio.AsyncServer) -> None:
 
         # Get device info if provided
         device_info = data.get("deviceInfo")
+        logger.info(f"Device register data - deviceId: {device_id}, deviceInfo: {device_info}")
 
         # Register in memory
         device_manager.register_device(device_id, sid)
