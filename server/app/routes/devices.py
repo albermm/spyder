@@ -42,6 +42,7 @@ async def list_devices(
                 "status": d.status.value,
                 "lastSeen": d.last_seen.isoformat() if d.last_seen else None,
                 "batteryLevel": d.current_status.get("battery") if d.current_status else None,
+                "deviceInfo": d.device_info,
                 "settings": d.settings,
             }
             for d in devices
