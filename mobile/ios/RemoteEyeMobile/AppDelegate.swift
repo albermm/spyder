@@ -5,6 +5,7 @@ import ReactAppDependencyProvider
 import FirebaseCore
 import FirebaseMessaging
 import UserNotifications
+import TSBackgroundFetch
 
 // =============================================================================
 // SETUP MODE FLAG
@@ -48,6 +49,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     )
     application.registerForRemoteNotifications()
 
+    // --- Register Background Fetch ---
+    // Required for react-native-background-fetch to work
+    TSBackgroundFetch.sharedInstance().didFinishLaunching()
+
     // --- React Native Bridge Initialization ---
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
@@ -70,14 +75,23 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
       )
     } else {
       // =======================================================================
-      // HEADLESS MODE: Run JS in background without UI
+      // HEADLESS MODE: Run JS in background without visible UI
       // =======================================================================
       // The app will use credentials stored during setup mode.
       // If not paired, JS will detect this and idle until next setup.
-      NSLog("[AppDelegate] Headless mode. No UI will be presented.")
+      NSLog("[AppDelegate] Headless mode. Running with minimal window.")
 
-      // Create bridge manually to run JS without attaching to a view
-      bridge = RCTBridge(delegate: delegate, launchOptions: launchOptions)
+      // Create a window but don't show any UI - required for JS execution
+      window = UIWindow(frame: UIScreen.main.bounds)
+      window?.backgroundColor = .black
+      window?.isHidden = false
+
+      // Start React Native - the JS side will check isSetupMode and render nothing
+      factory.startReactNative(
+        withModuleName: "RemoteEyeMobile",
+        in: window,
+        launchOptions: launchOptions
+      )
     }
 
     return true

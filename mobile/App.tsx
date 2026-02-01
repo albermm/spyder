@@ -14,22 +14,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StatusBar, View, StyleSheet, ActivityIndicator, Text, AppState as RNAppState } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { authService, socketService, pushNotificationService } from './src/services';
+import { authService, socketService, pushNotificationService, backgroundService, commandHandler } from './src/services';
 import { PairingScreen, MainScreen } from './src/screens';
 
 type AppMode = 'loading' | 'unpaired' | 'paired_ui' | 'paired_headless';
 
 /**
- * Detect if we're running in headless mode (no UI).
- * In headless mode, we won't render any UI components.
+ * Check if we should run in minimal UI mode.
+ * In production, this would be controlled by a native module flag.
+ * For now, we show minimal UI when paired and not in active foreground use.
  */
-const isHeadlessMode = (): boolean => {
-  // If AppDelegate didn't create a window, we're headless.
-  // We detect this by checking if the app was launched in background
-  // or if there's no visible UI root. For React Native, we check
-  // if the current app state indicates we're in background at launch.
-  return RNAppState.currentState === 'background' || RNAppState.currentState === 'unknown';
-};
+const HEADLESS_MODE = false; // Set to true for headless builds (no visible UI)
 
 function App(): React.JSX.Element | null {
   const [appMode, setAppMode] = useState<AppMode>('loading');
@@ -54,14 +49,13 @@ function App(): React.JSX.Element | null {
 
       if (isAuthenticated) {
         // Credentials exist - device is paired
-        const headless = isHeadlessMode();
-        console.log('[App] Headless mode:', headless);
+        console.log('[App] Headless mode:', HEADLESS_MODE);
 
         // Start background services (works in both UI and headless modes)
         await startBackgroundServices();
 
-        if (headless) {
-          // Headless mode: don't render UI, just run services
+        if (HEADLESS_MODE) {
+          // Headless mode: minimal UI, just run services
           setAppMode('paired_headless');
           console.log('[App] Running in headless mode with active services.');
         } else {
@@ -71,13 +65,10 @@ function App(): React.JSX.Element | null {
         }
       } else {
         // No credentials - device is unpaired
-        const headless = isHeadlessMode();
-
-        if (headless) {
+        if (HEADLESS_MODE) {
           // Headless + unpaired: can't do anything, idle and wait
           setAppMode('unpaired');
           console.log('[App] ERROR: Device not paired. Please enter setup mode.');
-          console.log('[App] Set isSetupMode=true in AppDelegate.swift, rebuild, and pair the device.');
         } else {
           // UI mode + unpaired: show pairing screen
           setAppMode('unpaired');
@@ -114,8 +105,15 @@ function App(): React.JSX.Element | null {
       // Connect to WebSocket with self-healing (token refresh handled by SocketService)
       await socketService.connectWithAutoRefresh();
 
+      // Initialize command handler to process incoming commands
+      commandHandler.initialize();
+
       // Initialize push notification service
       await pushNotificationService.initialize();
+
+      // Initialize background fetch service (keeps app alive periodically)
+      await backgroundService.initialize();
+      await backgroundService.start();
 
       servicesInitialized.current = true;
       console.log('[App] Background services started successfully.');
@@ -138,12 +136,14 @@ function App(): React.JSX.Element | null {
     setAppMode('unpaired');
   };
 
-  // Headless mode: don't render any UI
+  // Headless mode: render minimal black screen (required to keep app alive)
   if (appMode === 'paired_headless') {
-    console.log('[App] Headless mode active - no UI rendered.');
-    // Return null to not render anything
-    // Services are running in the background
-    return null;
+    console.log('[App] Headless mode active - minimal UI, services running.');
+    return (
+      <View style={styles.headlessContainer}>
+        <StatusBar barStyle="light-content" backgroundColor="#000000" hidden={true} />
+      </View>
+    );
   }
 
   // Loading state
@@ -181,6 +181,10 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginTop: 16,
     fontSize: 16,
+  },
+  headlessContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
   },
 });
 
