@@ -8,19 +8,14 @@ import UserNotifications
 import TSBackgroundFetch
 
 // =============================================================================
-// SETUP MODE FLAG
+// AUTO MODE: No more manual flag switching!
 // =============================================================================
-// Set to `true` to enable UI for initial device pairing.
-// Set to `false` for headless background operation after pairing is complete.
+// The app now auto-detects its mode based on stored credentials:
+// - No credentials → Shows pairing UI
+// - Has credentials → Shows minimal status UI, runs services in background
 //
-// SETUP PROCESS:
-// 1. Set isSetupMode = true, build and install the app
-// 2. Complete pairing on the PairingScreen (credentials saved to AsyncStorage)
-// 3. Verify device appears online on dashboard
-// 4. Set isSetupMode = false, rebuild and reinstall
-// 5. App now runs headlessly with stored credentials
+// Just build ONCE and install. The JS side handles everything.
 // =============================================================================
-private let isSetupMode = true
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
@@ -61,38 +56,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
-    if isSetupMode {
-      // =======================================================================
-      // SETUP MODE: Launch with UI for pairing
-      // =======================================================================
-      NSLog("[AppDelegate] Setup mode enabled. Launching with UI for pairing.")
+    // =======================================================================
+    // AUTO MODE: Always launch React Native, let JS handle the UI
+    // =======================================================================
+    // JS will check for stored credentials and show:
+    // - PairingScreen if not paired
+    // - Minimal status screen if already paired
+    NSLog("[AppDelegate] Launching in auto mode. JS will detect pairing state.")
 
-      window = UIWindow(frame: UIScreen.main.bounds)
-      factory.startReactNative(
-        withModuleName: "RemoteEyeMobile",
-        in: window,
-        launchOptions: launchOptions
-      )
-    } else {
-      // =======================================================================
-      // HEADLESS MODE: Run JS in background without visible UI
-      // =======================================================================
-      // The app will use credentials stored during setup mode.
-      // If not paired, JS will detect this and idle until next setup.
-      NSLog("[AppDelegate] Headless mode. Running with minimal window.")
-
-      // Create a window but don't show any UI - required for JS execution
-      window = UIWindow(frame: UIScreen.main.bounds)
-      window?.backgroundColor = .black
-      window?.isHidden = false
-
-      // Start React Native - the JS side will check isSetupMode and render nothing
-      factory.startReactNative(
-        withModuleName: "RemoteEyeMobile",
-        in: window,
-        launchOptions: launchOptions
-      )
-    }
+    window = UIWindow(frame: UIScreen.main.bounds)
+    factory.startReactNative(
+      withModuleName: "RemoteEyeMobile",
+      in: window,
+      launchOptions: launchOptions
+    )
 
     return true
   }

