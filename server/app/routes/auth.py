@@ -39,8 +39,11 @@ async def register(
                 detail={"code": "INVALID_INPUT", "message": "Pairing code required for device registration"},
             )
 
+        # Normalize pairing code to uppercase for case-insensitive matching
+        pairing_code = request.pairing_code.upper()
+
         # Validate pairing code
-        is_valid = await crud.validate_pairing_code(db, request.pairing_code)
+        is_valid = await crud.validate_pairing_code(db, pairing_code)
         if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -64,7 +67,7 @@ async def register(
         )
 
         # Mark pairing code as used
-        await crud.use_pairing_code(db, request.pairing_code, device_id)
+        await crud.use_pairing_code(db, pairing_code, device_id)
 
         # Generate tokens
         token = AuthService.create_access_token(device_id, ClientType.DEVICE)

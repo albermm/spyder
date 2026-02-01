@@ -57,7 +57,7 @@ class AuthService {
       body: JSON.stringify({
         name: deviceName,
         type: 'device',
-        pairing_code: pairingCode,
+        pairing_code: pairingCode.toUpperCase(),
       }),
     });
 
