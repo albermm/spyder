@@ -33,10 +33,9 @@ services:
   # Dashboard Frontend
   - type: web
     name: spyder-dashboard
-    runtime: static
-    rootDir: dashboard
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+    env: static
+    buildCommand: cd dashboard && npm install && npm run build
+    staticPublishPath: dashboard/dist
     routes:
       - type: rewrite
         source: /*
