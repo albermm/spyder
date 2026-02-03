@@ -40,20 +40,42 @@ export const MainScreen: React.FC<MainScreenProps> = ({ onLogout }) => {
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraPosition, setCameraPosition] = useState<CameraPosition>('back');
 
-  const device = useCameraDevice(cameraPosition);
+  const backDevice = useCameraDevice('back');
+  const frontDevice = useCameraDevice('front');
+  const device = cameraPosition === 'back' ? backDevice : frontDevice;
   const cameraRef = useRef<Camera>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+
+  // Log on every render to diagnose camera issues
+  console.log('[MainScreen] RENDER - backDevice:', !!backDevice, 'frontDevice:', !!frontDevice, 'selected:', cameraPosition, 'cameraReady:', cameraReady);
 
   useEffect(() => {
     initialize();
     return () => cleanup();
   }, []);
 
-  // Update camera ref when it changes
+  // Update camera ref in service when it changes
   useEffect(() => {
-    if (cameraRef.current) {
+    if (cameraRef.current && cameraReady) {
+      console.log('[MainScreen] Camera initialized and ready, setting ref in service');
       cameraService.setCameraRef(cameraRef.current);
     }
-  }, [cameraRef.current]);
+    return () => {
+      cameraService.setCameraRef(null);
+    };
+  }, [cameraReady, device]);
+
+  // Camera initialized callback
+  const onCameraInitialized = React.useCallback(() => {
+    console.log('[MainScreen] *** Camera onInitialized called! Setting ref...');
+    setCameraReady(true);
+    if (cameraRef.current) {
+      console.log('[MainScreen] *** Camera ref exists, setting in service');
+      cameraService.setCameraRef(cameraRef.current);
+    } else {
+      console.log('[MainScreen] *** WARNING: Camera ref is still null after onInitialized');
+    }
+  }, []);
 
   // Listen for camera state changes to activate/deactivate camera component
   useEffect(() => {
@@ -70,6 +92,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({ onLogout }) => {
   useEffect(() => {
     const handlePositionChange = (position: CameraPosition) => {
       console.log('[MainScreen] Camera position changed:', position);
+      setCameraReady(false); // Reset ready state when switching cameras
       setCameraPosition(position);
     };
 
@@ -173,16 +196,23 @@ export const MainScreen: React.FC<MainScreenProps> = ({ onLogout }) => {
     }
   };
 
+  // Log whether camera will render
+  if (!device) {
+    console.log('[MainScreen] *** Camera NOT rendering - device is null/undefined');
+  }
+
   return (
     <View style={styles.container}>
-      {/* Camera (hidden but active for streaming when requested) */}
+      {/* Camera (hidden but always active so it's ready for commands) */}
       {device && (
         <Camera
           ref={cameraRef}
           style={styles.hiddenCamera}
           device={device}
-          isActive={cameraActive}
+          isActive={true}
           photo={true}
+          onInitialized={onCameraInitialized}
+          onError={(error) => console.log('[MainScreen] Camera error:', error.message)}
         />
       )}
 

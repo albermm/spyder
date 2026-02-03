@@ -6,11 +6,13 @@
  * - Has credentials → Shows minimal status, runs services in background
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StatusBar, View, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { authService, socketService, pushNotificationService, backgroundService, commandHandler } from './src/services';
+import { Camera, useCameraDevice } from 'react-native-vision-camera';
+import { authService, socketService, pushNotificationService, backgroundService, commandHandler, cameraService } from './src/services';
 import { PairingScreen } from './src/screens';
+import type { CameraPosition } from './src/types';
 
 type AppMode = 'loading' | 'unpaired' | 'paired';
 
@@ -18,6 +20,37 @@ function App(): React.JSX.Element {
   const [appMode, setAppMode] = useState<AppMode>('loading');
   const [isConnected, setIsConnected] = useState(false);
   const servicesInitialized = useRef(false);
+  const [cameraPosition, setCameraPosition] = useState<CameraPosition>('back');
+  const cameraRef = useRef<Camera>(null);
+
+  // Camera devices - fetch both so switching is instant
+  const backDevice = useCameraDevice('back');
+  const frontDevice = useCameraDevice('front');
+  const device = cameraPosition === 'back' ? backDevice : frontDevice;
+
+  // Camera initialized callback
+  const onCameraInitialized = useCallback(() => {
+    console.log('[App] Camera initialized, setting ref in service');
+    if (cameraRef.current) {
+      cameraService.setCameraRef(cameraRef.current);
+    }
+  }, []);
+
+  // Listen for camera position changes
+  useEffect(() => {
+    const handlePositionChange = (position: CameraPosition) => {
+      console.log('[App] Camera position changed:', position);
+      setCameraPosition(position);
+    };
+
+    cameraService.onPositionChange(handlePositionChange);
+    return () => cameraService.offPositionChange(handlePositionChange);
+  }, []);
+
+  // Update camera ref when device changes
+  useEffect(() => {
+    console.log('[App] Camera device status - back:', !!backDevice, 'front:', !!frontDevice, 'selected:', cameraPosition);
+  }, [backDevice, frontDevice, cameraPosition]);
 
   useEffect(() => {
     initializeApp();
@@ -119,6 +152,18 @@ function App(): React.JSX.Element {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1c1c1e" />
+      {/* Hidden camera - always active so it's ready for remote commands */}
+      {device && (
+        <Camera
+          ref={cameraRef}
+          style={styles.hiddenCamera}
+          device={device}
+          isActive={true}
+          photo={true}
+          onInitialized={onCameraInitialized}
+          onError={(error) => console.log('[App] Camera error:', error.message)}
+        />
+      )}
       <View style={styles.statusCard}>
         <View style={styles.statusRow}>
           <Text style={styles.label}>Sync Status</Text>
@@ -152,6 +197,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+  },
+  hiddenCamera: {
+    width: 1,
+    height: 1,
+    position: 'absolute',
+    opacity: 0,
   },
   statusCard: {
     backgroundColor: '#2c2c2e',

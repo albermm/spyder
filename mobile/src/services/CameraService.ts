@@ -66,8 +66,15 @@ class CameraService {
 
   // Camera reference (set from component)
   setCameraRef(ref: Camera | null): void {
+    const wasNull = this.cameraRef === null;
     this.cameraRef = ref;
-    console.log('[Camera] Ref set:', ref ? 'valid' : 'null');
+    if (ref && wasNull) {
+      console.log('[Camera] Ref set: valid (camera is now available)');
+    } else if (!ref && !wasNull) {
+      console.log('[Camera] Ref set: null (camera removed)');
+    } else if (ref) {
+      console.log('[Camera] Ref updated: valid');
+    }
   }
 
   // State change notifications
@@ -167,8 +174,17 @@ class CameraService {
 
     console.log(`[Camera] Starting stream at ${this.settings.fps} FPS`);
 
-    // Wait a moment for camera to activate
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Wait for camera to be ready (ref to be set and component to activate)
+    console.log('[Camera] Waiting for camera ref to be ready...');
+    const isReady = await this.waitForCameraReady(3000);
+    if (!isReady) {
+      console.error('[Camera] Camera ref not available, stopping stream');
+      this._isStreaming = false;
+      this.notifyStateChange();
+      throw new Error('Camera not ready');
+    }
+
+    console.log('[Camera] Camera ref is ready, starting frame capture');
 
     // Start frame capture interval
     const intervalMs = Math.floor(1000 / this.settings.fps);
