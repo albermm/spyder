@@ -34,7 +34,7 @@ services:
   - type: web
     name: spyder-dashboard
     env: static
-    buildCommand: cd dashboard && npm install && npm run build
+    buildCommand: cd dashboard && npm install --include=dev && npm run build
     staticPublishPath: dashboard/dist
     routes:
       - type: rewrite
