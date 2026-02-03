@@ -148,9 +148,17 @@ class CameraService {
       return;
     }
 
-    const hasPermission = await this.checkPermissions();
+    // Check if permission is already granted
+    let hasPermission = await this.checkPermissions();
+
+    // If not, request it
     if (!hasPermission) {
-      throw new Error('Camera permission not granted');
+      console.log('[Camera] Requesting camera permission...');
+      hasPermission = await this.requestPermissions();
+
+      if (!hasPermission) {
+        throw new Error('Camera permission denied by user');
+      }
     }
 
     this._isStreaming = true;
