@@ -22,7 +22,7 @@ services:
       - key: REFRESH_TOKEN_EXPIRE_DAYS
         value: 7
       - key: CORS_ORIGINS
-        value: '["https://spyder-dashboard.onrender.com","https://spyder-server.onrender.com"]'
+        value: '["https://spyder-dashboard.onrender.com","https://spyder-server.onrender.com","http://localhost:5173","http://localhost:3000"]'
       - key: PAIRING_CODE_EXPIRE_MINUTES
         value: 10
       - key: RATE_LIMIT_PER_MINUTE
