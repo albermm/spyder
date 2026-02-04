@@ -35,12 +35,18 @@ class PushNotificationService:
 
         try:
             # Initialize with service account credentials
-            cred_dict = json.loads(self.settings.firebase_service_account_json)
+            json_str = self.settings.firebase_service_account_json
+            logger.info(f"Firebase JSON length: {len(json_str)}, starts with: {json_str[:50]}...")
+            cred_dict = json.loads(json_str)
+            logger.info(f"Firebase project_id: {cred_dict.get('project_id')}")
             cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
             self._initialized = True
-            logger.info("Firebase Admin SDK initialized")
+            logger.info("Firebase Admin SDK initialized successfully")
             return True
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Firebase JSON: {e}")
+            return False
         except Exception as e:
             logger.error(f"Failed to initialize Firebase: {e}")
             return False
