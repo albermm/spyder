@@ -45,8 +45,13 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: List[str] = Field(
-        default=["*"],
-        description="Allowed CORS origins (use '*' to allow all for mobile apps)",
+        default=[
+            "*",
+            "https://spyder-ipch.onrender.com",
+            "http://localhost:5173",
+            "http://localhost:3000",
+        ],
+        description="Allowed CORS origins",
     )
 
     # Pairing
