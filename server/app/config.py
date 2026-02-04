@@ -43,10 +43,9 @@ class Settings(BaseSettings):
         description="Database connection URL",
     )
 
-    # CORS
+    # CORS - specific origins for dashboard access
     cors_origins: List[str] = Field(
         default=[
-            "*",
             "https://spyder-ipch.onrender.com",
             "http://localhost:5173",
             "http://localhost:3000",
