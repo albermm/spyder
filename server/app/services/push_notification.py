@@ -1,5 +1,6 @@
 """Push notification service using Firebase Cloud Messaging."""
 
+import base64
 import json
 import logging
 from typing import Optional
@@ -36,7 +37,16 @@ class PushNotificationService:
         try:
             # Initialize with service account credentials
             json_str = self.settings.firebase_service_account_json
-            logger.info(f"Firebase JSON length: {len(json_str)}, starts with: {json_str[:50]}...")
+            logger.info(f"Firebase config length: {len(json_str)}, starts with: {json_str[:20]}...")
+
+            # Try to detect if it's base64 encoded
+            if not json_str.strip().startswith('{'):
+                logger.info("Firebase config appears to be base64 encoded, decoding...")
+                try:
+                    json_str = base64.b64decode(json_str).decode('utf-8')
+                except Exception as e:
+                    logger.error(f"Failed to base64 decode: {e}")
+
             cred_dict = json.loads(json_str)
             logger.info(f"Firebase project_id: {cred_dict.get('project_id')}")
             cred = credentials.Certificate(cred_dict)
