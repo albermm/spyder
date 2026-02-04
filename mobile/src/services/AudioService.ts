@@ -109,9 +109,16 @@ class AudioService {
   private setupAppStateHandling() {
     this.appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'background' && this.isStreaming) {
-        console.log('[Audio] App entered background, starting background task.');
-        if (Platform.OS === 'ios' && NativeModules.BackgroundTaskManager) {
-          this.backgroundTaskID = NativeModules.BackgroundTaskManager.startBackgroundTask();
+        console.log('[Audio] App entered background while recording, keeping audio session active.');
+        if (Platform.OS === 'ios') {
+          // Re-activate audio session to ensure it stays active in background
+          if (NativeModules.AudioSessionManager) {
+            NativeModules.AudioSessionManager.activateForBackground();
+          }
+          // Also start a background task as backup
+          if (NativeModules.BackgroundTaskManager) {
+            this.backgroundTaskID = NativeModules.BackgroundTaskManager.startBackgroundTask();
+          }
         }
       } else if (nextAppState === 'active') {
         console.log('[Audio] App became active.');
@@ -126,11 +133,10 @@ class AudioService {
 
   private initializeLiveAudioStream(): void {
     if (Platform.OS === 'ios' && NativeModules.AudioSessionManager) {
+      // Configure audio session for background recording
       NativeModules.AudioSessionManager.setCategory('playAndRecord', {
-        mixWithOthers: false,
         allowBluetooth: true,
         allowAirPlay: true,
-        duckOthers: true,
       });
     }
 

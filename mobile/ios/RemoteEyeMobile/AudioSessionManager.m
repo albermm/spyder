@@ -6,46 +6,63 @@
 RCT_EXPORT_MODULE();
 
 RCT_EXPORT_METHOD(setCategory:(NSString *)category options:(NSDictionary *)options) {
-  AVAudioSession *session = [AVAudioSession sharedInstance];
-  NSError *error;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    NSError *error;
 
-  NSString *categoryString = AVAudioSessionCategoryPlayAndRecord;
-  if ([category isEqualToString:@"playAndRecord"]) {
-    categoryString = AVAudioSessionCategoryPlayAndRecord;
-  } else if ([category isEqualToString:@"record"]) {
-    categoryString = AVAudioSessionCategoryRecord;
-  }
+    NSString *categoryString = AVAudioSessionCategoryPlayAndRecord;
+    if ([category isEqualToString:@"playAndRecord"]) {
+      categoryString = AVAudioSessionCategoryPlayAndRecord;
+    } else if ([category isEqualToString:@"record"]) {
+      categoryString = AVAudioSessionCategoryRecord;
+    }
 
-  // Convert options dictionary to AVAudioSessionCategoryOptions
-  AVAudioSessionCategoryOptions categoryOptions = 0;
-  if ([options[@"mixWithOthers"] boolValue]) {
-    categoryOptions |= AVAudioSessionCategoryOptionMixWithOthers;
-  }
-  if ([options[@"allowBluetooth"] boolValue]) {
-    categoryOptions |= AVAudioSessionCategoryOptionAllowBluetooth;
-  }
-  if ([options[@"allowAirPlay"] boolValue]) {
-    categoryOptions |= AVAudioSessionCategoryOptionAllowAirPlay;
-  }
-  if ([options[@"duckOthers"] boolValue]) {
-    categoryOptions |= AVAudioSessionCategoryOptionDuckOthers;
-  }
+    // Options for background audio recording
+    AVAudioSessionCategoryOptions categoryOptions = AVAudioSessionCategoryOptionDefaultToSpeaker;
 
-  [session setCategory:categoryString withOptions:categoryOptions error:&error];
+    if ([options[@"allowBluetooth"] boolValue]) {
+      categoryOptions |= AVAudioSessionCategoryOptionAllowBluetooth;
+      categoryOptions |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+    }
+    if ([options[@"allowAirPlay"] boolValue]) {
+      categoryOptions |= AVAudioSessionCategoryOptionAllowAirPlay;
+    }
+    // Note: NOT using mixWithOthers - we want exclusive audio for background recording
 
-  if (error) {
-    NSLog(@"[AudioSessionManager] Error setting audio session category: %@", error.localizedDescription);
-  } else {
-    NSLog(@"[AudioSessionManager] Audio session category set to %@ with options", categoryString);
-  }
+    [session setCategory:categoryString
+                    mode:AVAudioSessionModeDefault
+                 options:categoryOptions
+                   error:&error];
 
-  // Activate the audio session
-  [session setActive:YES error:&error];
-  if (error) {
-    NSLog(@"[AudioSessionManager] Error activating audio session: %@", error.localizedDescription);
-  } else {
-    NSLog(@"[AudioSessionManager] Audio session activated.");
-  }
+    if (error) {
+      NSLog(@"[AudioSessionManager] Error setting audio session category: %@", error.localizedDescription);
+    } else {
+      NSLog(@"[AudioSessionManager] Audio session category set to %@ for background recording", categoryString);
+    }
+
+    // Activate the audio session
+    [session setActive:YES withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error];
+    if (error) {
+      NSLog(@"[AudioSessionManager] Error activating audio session: %@", error.localizedDescription);
+    } else {
+      NSLog(@"[AudioSessionManager] Audio session activated for background use.");
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(activateForBackground) {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    NSError *error;
+
+    // Re-activate session when going to background
+    [session setActive:YES withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error];
+    if (error) {
+      NSLog(@"[AudioSessionManager] Error re-activating for background: %@", error.localizedDescription);
+    } else {
+      NSLog(@"[AudioSessionManager] Audio session re-activated for background.");
+    }
+  });
 }
 
 @end
