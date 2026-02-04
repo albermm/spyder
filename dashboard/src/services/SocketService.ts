@@ -303,7 +303,36 @@ class SocketService {
 
   // Ping device via silent push notification (for waking up offline devices)
   async pingDevice(deviceId: string): Promise<{ success: boolean; status?: string; message?: string }> {
-    return this.sendCommandToDevice(deviceId, 'WAKE_UP');
+    const serverUrl = getServerUrl();
+    try {
+      const response = await fetch(`${serverUrl}/api/devices/${deviceId}/ping`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('[Socket] Ping failed:', data);
+        return {
+          success: false,
+          status: data.status ?? 'error',
+          message: data.detail ?? data.message ?? 'Failed to ping device',
+        };
+      }
+
+      console.log('[Socket] Ping sent. Server response:', data);
+      return { success: true, status: data.status, message: data.message };
+    } catch (error) {
+      console.error('[Socket] Failed to ping device:', error);
+      return {
+        success: false,
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
 }
